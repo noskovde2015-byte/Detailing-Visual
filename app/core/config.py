@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseModel, PostgresDsn
+from pydantic import BaseModel, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -23,6 +23,12 @@ class DataBaseConfig(BaseModel):
     max_overflow: int = 10
 
 
+class GeminiConfig(BaseModel):
+    api_key: SecretStr | None = None
+    model: str = "gemini-3-pro-image"
+    timeout_seconds: int = 120
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
@@ -36,6 +42,7 @@ class Settings(BaseSettings):
     run: RunConfig = RunConfig()
     prefix: ApiPrefix = ApiPrefix()
     db: DataBaseConfig
+    gemini: GeminiConfig = GeminiConfig()
 
 
 settings = Settings()
