@@ -1,0 +1,158 @@
+import json
+from collections.abc import Sequence
+
+import pytest
+from httpx import AsyncClient
+
+from app.api import generations as generations_api
+from app.core.config import settings
+from app.services.image_generator import (
+    GenerationRefusedError,
+    ImageData,
+    ImageGenerator,
+)
+from tests.integration.conftest import image_file, login
+
+pytestmark = pytest.mark.anyio
+
+URL = "/api/generations"
+
+
+async def _create(client: AsyncClient, params: dict | None = None, **files):
+    upload = {"car": image_file()}
+    upload.update(files)
+    return await client.post(
+        URL,
+        files=upload,
+        data={
+            "params": json.dumps(params if params is not None else {"antichrome": True})
+        },
+    )
+
+
+async def test_requires_auth(client: AsyncClient) -> None:
+    response = await _create(client)
+    assert response.status_code == 401
+
+
+async def test_full_flow_with_fake_generator(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+
+    response = await _create(
+        client,
+        {"film_finish": "glossy", "antichrome": True},
+        film=image_file("film.jpg"),
+    )
+    assert response.status_code == 202, response.text
+    created = response.json()
+    assert created["status"] == "pending"
+    assert created["input_roles"] == ["car", "film"]
+    assert response.headers["location"].endswith(created["id"])
+
+    status_response = await client.get(f"{URL}/{created['id']}")
+    body = status_response.json()
+    assert body["status"] == "done", body
+    assert body["result_url"]
+
+    image = await client.get(body["result_url"], params={"download": True})
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/png"
+    assert image.headers["content-disposition"].startswith("attachment")
+    assert image.content.startswith(b"\x89PNG")
+
+    original = await client.get(f"{URL}/{created['id']}/images/car")
+    assert original.headers["content-type"] == "image/jpeg"
+
+
+async def test_no_changes_rejected(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    response = await _create(client, {})
+    assert response.status_code == 422
+
+
+async def test_unknown_param_rejected(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    response = await _create(client, {"antichrome": True, "spoiler": True})
+    assert response.status_code == 422
+
+
+async def test_wheels_require_photo(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    response = await _create(client, {"wheels": {"current_size": 18, "new_size": 20}})
+    assert response.status_code == 422
+
+
+async def test_not_an_image_rejected(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    response = await _create(
+        client, car=("car.jpg", b"definitely not jpeg", "image/jpeg")
+    )
+    assert response.status_code == 422
+    assert "car" in response.json()["detail"]
+
+
+async def test_too_large_upload_rejected(
+    client: AsyncClient, make_user, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings.generation, "max_upload_bytes", 1000)
+    login(client, await make_user())
+    response = await _create(client)
+    assert response.status_code == 413
+
+
+async def test_daily_limit(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    limit = settings.generation.free_daily_limit
+
+    for _ in range(limit):
+        assert (await _create(client)).status_code == 202
+
+    response = await _create(client)
+    assert response.status_code == 429
+    detail = response.json()["detail"]
+    assert detail["quota"]["remaining"] == 0
+    assert "retry-after" in response.headers
+
+    quota = (await client.get(f"{URL}/quota")).json()
+    assert quota == quota | {"limit": limit, "used": limit, "remaining": 0}
+
+
+async def test_failed_generation_not_counted(
+    client: AsyncClient, make_user, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class RefusingGenerator(ImageGenerator):
+        name = "refusing"
+
+        async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+            raise GenerationRefusedError("Модель не смогла обработать это фото.")
+
+    monkeypatch.setattr(generations_api, "get_image_generator", RefusingGenerator)
+    login(client, await make_user())
+
+    created = (await _create(client)).json()
+    body = (await client.get(f"{URL}/{created['id']}")).json()
+    assert body["status"] == "failed"
+    assert body["error"] == "Модель не смогла обработать это фото."
+    assert body["result_url"] is None
+
+    quota = (await client.get(f"{URL}/quota")).json()
+    assert quota["used"] == 0
+
+
+async def test_other_user_cannot_see_generation(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    created = (await _create(client)).json()
+
+    login(client, await make_user())
+    assert (await client.get(f"{URL}/{created['id']}")).status_code == 404
+    assert (await client.get(f"{URL}/{created['id']}/images/result")).status_code == 404
+
+
+async def test_history_is_paginated(client: AsyncClient, make_user) -> None:
+    login(client, await make_user(plan="pro"))
+    for _ in range(3):
+        await _create(client)
+
+    page = (await client.get(URL, params={"limit": 2})).json()
+    assert page["total"] == 3
+    assert len(page["items"]) == 2
