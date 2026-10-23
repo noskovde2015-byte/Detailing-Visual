@@ -1,8 +1,9 @@
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.config import settings
 from app.models.generation_image import ImageRole
@@ -62,7 +63,12 @@ class LocalStorage(Storage):
     @staticmethod
     def _write(path: Path, data: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        tmp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+        try:
+            tmp_path.write_bytes(data)
+            os.replace(tmp_path, path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
 
 def build_image_key(generation_id: UUID, role: ImageRole, content_type: str) -> str:

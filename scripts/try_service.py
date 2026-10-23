@@ -8,7 +8,7 @@ from uuid import uuid4
 from app.models.generation_image import ImageRole
 from app.schemas.generation import FilmFinish, GenerationParams, WheelParams
 from app.services.generation_rules import validate_generation_input
-from app.services.gemini import ImageData, get_image_generator
+from app.services.image_generator import ImageData, get_image_generator
 from app.services.prompt_builder import build_prompt, ordered_roles
 from app.services.storage import build_image_key, get_storage
 
