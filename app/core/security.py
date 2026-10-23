@@ -1,4 +1,5 @@
-import enum
+import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -6,29 +7,29 @@ import jwt
 
 from app.core.config import settings
 
-
-class TokenType(enum.StrEnum):
-    ACCESS = "access"
-    REFRESH = "refresh"
+ACCESS_TOKEN_TYPE = "access"
+REFRESH_TOKEN_BYTES = 48
 
 
 class InvalidTokenError(Exception):
-    """Токен отсутствует, просрочен, подделан или не того типа."""
+    """Access-токен отсутствует, просрочен, подделан или не того типа."""
 
 
-def _lifetime(token_type: TokenType) -> timedelta:
-    if token_type is TokenType.ACCESS:
-        return timedelta(minutes=settings.auth.access_token_expire_minutes)
+def access_token_lifetime() -> timedelta:
+    return timedelta(minutes=settings.auth.access_token_expire_minutes)
+
+
+def refresh_token_lifetime() -> timedelta:
     return timedelta(days=settings.auth.refresh_token_expire_days)
 
 
-def create_token(user_id: uuid.UUID, token_type: TokenType) -> str:
+def create_access_token(user_id: uuid.UUID) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
-        "type": token_type.value,
+        "type": ACCESS_TOKEN_TYPE,
         "iat": now,
-        "exp": now + _lifetime(token_type),
+        "exp": now + access_token_lifetime(),
     }
     return jwt.encode(
         payload,
@@ -37,7 +38,7 @@ def create_token(user_id: uuid.UUID, token_type: TokenType) -> str:
     )
 
 
-def decode_token(token: str, expected_type: TokenType) -> uuid.UUID:
+def decode_access_token(token: str) -> uuid.UUID:
     try:
         payload = jwt.decode(
             token,
@@ -48,7 +49,7 @@ def decode_token(token: str, expected_type: TokenType) -> uuid.UUID:
     except jwt.PyJWTError as exc:
         raise InvalidTokenError from exc
 
-    if payload["type"] != expected_type.value:
+    if payload["type"] != ACCESS_TOKEN_TYPE:
         raise InvalidTokenError
 
     try:
@@ -57,5 +58,12 @@ def decode_token(token: str, expected_type: TokenType) -> uuid.UUID:
         raise InvalidTokenError from exc
 
 
-def token_max_age(token_type: TokenType) -> int:
-    return int(_lifetime(token_type).total_seconds())
+def generate_refresh_token() -> str:
+    """Непрозрачный случайный токен: вся информация о нём хранится в БД."""
+    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+
+
+def hash_refresh_token(token: str) -> str:
+    """В БД хранится только SHA-256: утечка базы не даёт рабочих токенов.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
