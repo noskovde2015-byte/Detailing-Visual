@@ -11,6 +11,10 @@ alembic = "^1.20.0"
 pydantic-settings = "^2.16.1"
 google-genai = "^2.32.0"
 tenacity = ">=8.2.3,<9.2.0"
+authlib = "^1.9.1"
+httpx = "^0.28.1"
+itsdangerous = "^2.2.0"
+pyjwt = "^2.15.1"
 
 [dependency-groups]
 dev = [
