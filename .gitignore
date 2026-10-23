@@ -215,3 +215,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Test photos (личные фото не коммитим)
+/*.jpg
+/*.jpeg
+/*.png
+/*.webp
