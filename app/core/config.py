@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +28,12 @@ class GeminiConfig(BaseModel):
     api_key: SecretStr | None = None
     model: str = "gemini-3-pro-image"
     timeout_seconds: int = 120
+    max_attempts: int = 3
+
+
+class StorageConfig(BaseModel):
+    backend: Literal["local"] = "local"
+    local_path: Path = BASE_DIR / "storage"
 
 
 class Settings(BaseSettings):
@@ -43,6 +50,7 @@ class Settings(BaseSettings):
     prefix: ApiPrefix = ApiPrefix()
     db: DataBaseConfig
     gemini: GeminiConfig = GeminiConfig()
+    storage: StorageConfig = StorageConfig()
 
 
 settings = Settings()
