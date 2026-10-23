@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, PostgresDsn, SecretStr
+from pydantic import BaseModel, Field, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -12,10 +12,15 @@ class RunConfig(BaseModel):
     port: int = 8001
 
 
+class LoggingConfig(BaseModel):
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+
 class ApiPrefix(BaseModel):
     api_prefix: str = "/api"
     auth_prefix: str = "/auth"
     users_prefix: str = "/users"
+    generations_prefix: str = "/generations"
 
 
 class DataBaseConfig(BaseModel):
@@ -31,6 +36,18 @@ class GeminiConfig(BaseModel):
     model: str = "gemini-3-pro-image"
     timeout_seconds: int = 120
     max_attempts: int = 3
+    max_retry_delay_seconds: float = 30.0
+
+
+class GenerationConfig(BaseModel):
+    backend: Literal["gemini", "fake"] = "gemini"
+    fake_delay_seconds: float = 2.0
+    free_daily_limit: int = Field(default=3, ge=0)
+    pro_daily_limit: int = Field(default=50, ge=0)
+    limit_window_hours: int = Field(default=24, ge=1)
+    max_upload_bytes: int = Field(default=15 * 1024 * 1024, gt=0)
+    max_image_side: int = Field(default=2048, ge=256)
+    max_image_pixels: int = Field(default=50_000_000, gt=0)
 
 
 class StorageConfig(BaseModel):
@@ -49,6 +66,7 @@ class AuthConfig(BaseModel):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
+    refresh_reuse_grace_seconds: int = 10
     access_cookie_name: str = "access_token"
     refresh_cookie_name: str = "refresh_token"
     cookie_secure: bool = False
@@ -66,9 +84,11 @@ class Settings(BaseSettings):
 
     app_name: str = "Detailing.Visual"
     run: RunConfig = RunConfig()
+    logging: LoggingConfig = LoggingConfig()
     prefix: ApiPrefix = ApiPrefix()
     db: DataBaseConfig
     gemini: GeminiConfig = GeminiConfig()
+    generation: GenerationConfig = GenerationConfig()
     storage: StorageConfig = StorageConfig()
     google: GoogleOAuthConfig
     auth: AuthConfig
