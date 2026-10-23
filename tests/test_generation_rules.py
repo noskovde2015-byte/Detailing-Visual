@@ -2,7 +2,10 @@ import pytest
 
 from app.models.generation_image import ImageRole
 from app.schemas.generation import FilmFinish, GenerationParams, WheelParams
-from app.services.generation_rules import GenerationInputError, validate_generation_input
+from app.services.generation_rules import (
+    GenerationInputError,
+    validate_generation_input,
+)
 
 
 def test_car_is_required() -> None:
