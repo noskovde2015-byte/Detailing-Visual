@@ -14,6 +14,8 @@ class RunConfig(BaseModel):
 
 class ApiPrefix(BaseModel):
     api_prefix: str = "/api"
+    auth_prefix: str = "/auth"
+    users_prefix: str = "/users"
 
 
 class DataBaseConfig(BaseModel):
@@ -36,6 +38,23 @@ class StorageConfig(BaseModel):
     local_path: Path = BASE_DIR / "storage"
 
 
+class GoogleOAuthConfig(BaseModel):
+    client_id: str
+    client_secret: SecretStr
+    redirect_uri: str = "http://localhost:8001/api/auth/google/callback"
+
+
+class AuthConfig(BaseModel):
+    secret_key: SecretStr
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    access_cookie_name: str = "access_token"
+    refresh_cookie_name: str = "refresh_token"
+    cookie_secure: bool = False
+    frontend_url: str = "http://localhost:5173"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
@@ -51,6 +70,8 @@ class Settings(BaseSettings):
     db: DataBaseConfig
     gemini: GeminiConfig = GeminiConfig()
     storage: StorageConfig = StorageConfig()
+    google: GoogleOAuthConfig
+    auth: AuthConfig
 
 
 settings = Settings()
