@@ -13,6 +13,7 @@ from arq import Retry, cron, func
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.db.db_helper import db_helper
+from app.services.cleanup import cleanup_storage
 from app.services.generation_queue import PROCESS_GENERATION_JOB, redis_settings
 from app.services.generation_runner import (
     GenerationOutcome,
@@ -27,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 queue_config = settings.queue
 
+# Запас сверх нашего таймаута: arq должен снимать задачу только если
+# собственный таймаут генерации почему-то не сработал.
 ARQ_TIMEOUT_MARGIN_SECONDS = 30
 
 Ctx = dict[str, Any]
@@ -74,6 +77,16 @@ async def sweep_stale_generations(ctx: Ctx) -> int:
     )
 
 
+async def cleanup_storage_files(ctx: Ctx) -> int:
+    cleanup = settings.cleanup
+    return await cleanup_storage(
+        ctx["session_factory"],
+        ctx["storage"],
+        failed_retention=timedelta(days=cleanup.failed_files_retention_days),
+        batch_size=cleanup.batch_size,
+    )
+
+
 class WorkerSettings:
     functions = (
         func(
@@ -93,11 +106,16 @@ class WorkerSettings:
             run_at_startup=True,
             unique=True,
         ),
+        # Раз в час, не в 00 минут: в ровный час обычно и так пик задач.
+        cron(cleanup_storage_files, minute={17}, unique=True),
     )
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = redis_settings()
     queue_name = queue_config.name
     max_jobs = queue_config.max_concurrent_generations
+    # Дать идущим генерациям закончиться при остановке (деплой), а не обрывать их.
     job_completion_wait = queue_config.job_timeout_seconds
+    # Как часто воркер отмечается в Redis. По этой отметке работает
+    # `arq --check` (healthcheck в Docker). По умолчанию в arq это раз в час.
     health_check_interval = 30

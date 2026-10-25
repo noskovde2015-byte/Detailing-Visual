@@ -23,7 +23,7 @@ from pydantic import ValidationError
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.db.db_helper import db_helper
-from app.models.generation import Generation
+from app.models.generation import Generation, GenerationStatus
 from app.models.generation_image import ImageRole
 from app.schemas.generation import (
     GenerationList,
@@ -31,6 +31,7 @@ from app.schemas.generation import (
     GenerationQuota,
     GenerationRead,
 )
+from app.services.cleanup import purge_generation_files
 from app.services.generation_limits import GenerationLimitExceededError, get_quota
 from app.services.generation_queue import (
     BackgroundGenerationQueue,
@@ -47,10 +48,12 @@ from app.services.generation_runner import (
     run_generation,
 )
 from app.services.generations import (
+    GenerationNotDeletableError,
     create_generation,
     get_user_generation,
     list_user_generations,
     quota_to_schema,
+    soft_delete_generation,
     to_read,
 )
 from app.services.image_generator import (
@@ -231,14 +234,20 @@ async def create(
     return to_read(generation)
 
 
-@router.get("", response_model=GenerationList, summary="История генераций")
+@router.get("", response_model=GenerationList, summary="Мои генерации")
 async def list_generations(
     user: CurrentUser,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    status_filter: Annotated[
+        GenerationStatus | None,
+        Query(alias="status", description="Только генерации с этим статусом"),
+    ] = None,
 ) -> GenerationList:
-    rows, total = await list_user_generations(session, user.id, limit, offset)
+    rows, total = await list_user_generations(
+        session, user.id, limit, offset, status=status_filter
+    )
     return GenerationList(
         items=[to_read(row) for row in rows], total=total, limit=limit, offset=offset
     )
@@ -257,6 +266,30 @@ async def read(
     if generation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Генерация не найдена")
     return to_read(generation)
+
+
+@router.delete(
+    "/{generation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить генерацию",
+    responses={409: {"description": "Генерация ещё выполняется"}},
+)
+async def delete_generation(
+    generation_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> None:
+    """Удаляет генерацию вместе с фото. Потраченный лимит не возвращается."""
+    generation = await get_user_generation(session, user.id, generation_id)
+    if generation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Генерация не найдена")
+    try:
+        await soft_delete_generation(session, generation)
+    except GenerationNotDeletableError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Генерация ещё выполняется. Удалить её можно после завершения",
+        ) from None
+    # Если хранилище сейчас недоступно, файлы дочистит уборщик в воркере.
+    await purge_generation_files(session, get_storage(), generation.id)
 
 
 @router.get(
@@ -302,6 +335,7 @@ async def generation_image_response(
         content_disposition=content_disposition,
     )
     if url is not None:
+        # Ссылка подписана на короткое время, кешировать сам редирект нельзя.
         return RedirectResponse(
             url,
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,

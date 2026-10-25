@@ -57,7 +57,14 @@ class GenerationRead(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    deleted_at: datetime | None = Field(
+        default=None, description="Только в админке: пользователь удалил генерацию"
+    )
     result_url: str | None
+    preview_url: str | None = Field(
+        description="Уменьшенная копия результата для галереи. Если null, "
+        "а result_url есть — показывать result_url"
+    )
 
 
 class GenerationList(BaseModel):

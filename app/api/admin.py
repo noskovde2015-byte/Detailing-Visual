@@ -181,7 +181,9 @@ async def user_generations(
     offset: Offset = 0,
 ) -> GenerationList:
     await _load_user(session, user_id)
-    rows, total = await list_user_generations(session, user_id, limit, offset)
+    rows, total = await list_user_generations(
+        session, user_id, limit, offset, include_deleted=True
+    )
     return GenerationList(
         items=[to_read(row, admin=True) for row in rows],
         total=total,

@@ -8,7 +8,7 @@ from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.generation import Generation, GenerationStatus
-from app.models.generation_image import GenerationImage, ImageRole
+from app.models.generation_image import INPUT_ROLES, GenerationImage, ImageRole
 from app.schemas.generation import GenerationParams
 from app.services.image_generator import (
     GenerationTemporaryError,
@@ -16,6 +16,7 @@ from app.services.image_generator import (
     ImageGenerationError,
     ImageGenerator,
 )
+from app.services.images import make_preview
 from app.services.model_request import build_model_request
 from app.services.storage import Storage, build_image_key
 
@@ -120,7 +121,7 @@ async def run_generation(
     пробрасывается дальше: очередь запустит её снова.
     """
     claimed = False
-    result_key: str | None = None
+    saved_keys: list[str] = []
     try:
         async with session_factory() as session:
             claimed = await _claim(session, generation_id)
@@ -139,26 +140,30 @@ async def run_generation(
                     mime_type=image.content_type,
                 )
                 for image in generation.images
-                if image.role != ImageRole.RESULT
+                if image.role in INPUT_ROLES
             }
 
             request = build_model_request(params, uploaded)
             async with asyncio.timeout(timeout_seconds):
                 result = await generator.generate(request.prompt, request.images)
 
-            result_key = build_image_key(
-                generation_id, ImageRole.RESULT, result.mime_type
-            )
-            await storage.save(result_key, result.data, result.mime_type)
-
-            session.add(
-                GenerationImage(
-                    generation_id=generation_id,
-                    role=ImageRole.RESULT.value,
-                    storage_key=result_key,
-                    content_type=result.mime_type,
+            for role, image in (
+                (ImageRole.RESULT, result),
+                (ImageRole.PREVIEW, await _try_make_preview(generation_id, result)),
+            ):
+                if image is None:
+                    continue
+                key = build_image_key(generation_id, role, image.mime_type)
+                await storage.save(key, image.data, image.mime_type)
+                saved_keys.append(key)
+                session.add(
+                    GenerationImage(
+                        generation_id=generation_id,
+                        role=role.value,
+                        storage_key=key,
+                        content_type=image.mime_type,
+                    )
                 )
-            )
             generation.status = GenerationStatus.DONE.value
             generation.finished_at = _now()
             generation.error = None
@@ -169,11 +174,11 @@ async def run_generation(
     except asyncio.CancelledError:
         if claimed:
             logger.warning("Генерация %s отменена, возвращаю в очередь", generation_id)
-            await asyncio.shield(_cleanup(storage, result_key))
+            await asyncio.shield(_cleanup(storage, saved_keys))
             await asyncio.shield(_release(session_factory, generation_id))
         raise
     except GenerationTemporaryError as exc:
-        await _cleanup(storage, result_key)
+        await _cleanup(storage, saved_keys)
         if allow_retry:
             logger.warning("Генерация %s: временный сбой, повторим", generation_id)
             await _release(session_factory, generation_id)
@@ -183,30 +188,42 @@ async def run_generation(
         return GenerationOutcome.FAILED
     except ImageGenerationError as exc:
         logger.warning("Генерация %s не удалась: %s", generation_id, exc)
-        await _cleanup(storage, result_key)
+        await _cleanup(storage, saved_keys)
         await mark_failed(session_factory, generation_id, str(exc))
         return GenerationOutcome.FAILED
     except TimeoutError:
         logger.warning(
             "Генерация %s не уложилась в %s с", generation_id, timeout_seconds
         )
-        await _cleanup(storage, result_key)
+        await _cleanup(storage, saved_keys)
         await mark_failed(session_factory, generation_id, TIMEOUT_ERROR)
         return GenerationOutcome.FAILED
     except Exception:
         logger.exception("Непредвиденная ошибка в генерации %s", generation_id)
-        await _cleanup(storage, result_key)
+        await _cleanup(storage, saved_keys)
         await mark_failed(session_factory, generation_id, GENERIC_ERROR)
         return GenerationOutcome.FAILED
 
 
-async def _cleanup(storage: Storage, key: str | None) -> None:
-    if key is None:
-        return
+async def _try_make_preview(
+    generation_id: uuid.UUID, result: ImageData
+) -> ImageData | None:
+    """Превью для галереи. Без него генерация всё равно успешна: фронт покажет
+    сам результат, поэтому ошибка здесь не должна стоить пользователю попытки."""
     try:
-        await storage.delete(key)
+        preview = await asyncio.to_thread(make_preview, result.data)
     except Exception:
-        logger.exception("Не удалось удалить файл результата %s", key)
+        logger.exception("Не удалось сделать превью генерации %s", generation_id)
+        return None
+    return ImageData(data=preview.data, mime_type=preview.content_type)
+
+
+async def _cleanup(storage: Storage, keys: list[str]) -> None:
+    for key in keys:
+        try:
+            await storage.delete(key)
+        except Exception:
+            logger.exception("Не удалось удалить файл %s", key)
 
 
 async def fail_stale_generations(

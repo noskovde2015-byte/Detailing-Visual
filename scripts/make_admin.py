@@ -1,11 +1,3 @@
-"""Назначить или снять администратора.
-
-Пользователь должен хотя бы раз войти на сайт через Google.
-
-    poetry run python -m scripts.make_admin you@gmail.com
-    poetry run python -m scripts.make_admin you@gmail.com --revoke
-"""
-
 import argparse
 import asyncio
 

@@ -56,6 +56,17 @@ class GenerationConfig(BaseModel):
     max_upload_bytes: int = Field(default=15 * 1024 * 1024, gt=0)
     max_image_side: int = Field(default=2048, ge=256)
     max_image_pixels: int = Field(default=50_000_000, gt=0)
+    preview_max_side: int = Field(default=512, ge=64)
+    preview_quality: int = Field(default=80, ge=30, le=95)
+
+
+class CleanupConfig(BaseModel):
+    """Уборка файлов в хранилище (раз в час, воркером).
+    Успешные генерации хранятся бессрочно."""
+
+    failed_files_retention_days: int = Field(default=7, ge=0)
+    """Сколько дней хранить фото неудачных генераций (чтобы разобрать жалобу)."""
+    batch_size: int = Field(default=200, ge=1)
 
 
 class RedisConfig(BaseModel):
@@ -173,6 +184,7 @@ class Settings(BaseSettings):
     storage: StorageConfig = StorageConfig()
     redis: RedisConfig = RedisConfig()
     queue: QueueConfig = QueueConfig()
+    cleanup: CleanupConfig = CleanupConfig()
     google: GoogleOAuthConfig
     auth: AuthConfig
 

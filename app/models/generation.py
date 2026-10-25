@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, false, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,9 @@ class GenerationStatus(enum.StrEnum):
 
 class Generation(Base):
     __tablename__ = "generations"
+    __table_args__ = (
+        Index("ix_generations_user_id_created_at", "user_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -42,6 +45,8 @@ class Generation(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """Пользователь удалил генерацию. Строка остаётся: по ней считаются лимиты."""
 
     images: Mapped[list["GenerationImage"]] = relationship(
         lazy="selectin",

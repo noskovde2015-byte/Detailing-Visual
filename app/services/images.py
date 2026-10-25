@@ -84,3 +84,32 @@ def process_upload(raw: bytes) -> ProcessedImage:
         width=image.width,
         height=image.height,
     )
+
+
+def make_preview(data: bytes) -> ProcessedImage:
+    """Уменьшенная копия для галереи: JPEG до preview_max_side пикселей по большей
+    стороне. Результат модели бывает PNG на несколько мегабайт, а сетка из
+    десятков таких картинок грузилась бы очень долго.
+
+    Функция блокирующая: из async-кода вызывать через asyncio.to_thread.
+    """
+    limits = settings.generation
+    with Image.open(io.BytesIO(data)) as opened:
+        image = opened.convert("RGB")
+    image.thumbnail(
+        (limits.preview_max_side, limits.preview_max_side), Image.Resampling.LANCZOS
+    )
+    output = io.BytesIO()
+    image.save(
+        output,
+        format="JPEG",
+        quality=limits.preview_quality,
+        optimize=True,
+        progressive=True,
+    )
+    return ProcessedImage(
+        data=output.getvalue(),
+        content_type="image/jpeg",
+        width=image.width,
+        height=image.height,
+    )

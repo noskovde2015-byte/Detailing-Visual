@@ -13,6 +13,13 @@ class ImageRole(enum.StrEnum):
     FILM = "film"
     WHEEL = "wheel"
     RESULT = "result"
+    PREVIEW = "preview"
+    """Уменьшенная копия результата для галереи «Мои генерации»."""
+
+
+INPUT_ROLES: frozenset[ImageRole] = frozenset(
+    {ImageRole.CAR, ImageRole.FILM, ImageRole.WHEEL}
+)
 
 
 class GenerationImage(Base):
