@@ -9,8 +9,12 @@ from app.core.config import settings
 from app.models.generation import Generation, GenerationStatus
 from app.models.generation_image import GenerationImage, ImageRole
 from app.models.user import User
-from app.schemas.generation import GenerationParams, GenerationRead
-from app.services.generation_limits import DailyLimitExceededError, get_quota
+from app.schemas.generation import GenerationParams, GenerationQuota, GenerationRead
+from app.services.generation_limits import (
+    GenerationLimitExceededError,
+    Quota,
+    get_quota,
+)
 from app.services.images import ProcessedImage
 from app.services.storage import Storage, build_image_key
 
@@ -36,7 +40,7 @@ async def create_generation(
     quota = await get_quota(session, user.id, user.plan)
     if quota.remaining <= 0:
         await session.rollback()
-        raise DailyLimitExceededError(quota)
+        raise GenerationLimitExceededError(quota)
 
     generation = Generation(
         id=uuid.uuid4(),
@@ -44,6 +48,7 @@ async def create_generation(
         status=GenerationStatus.PENDING.value,
         params=params.model_dump(mode="json"),
         model=model_name,
+        used_bonus=quota.next_uses_bonus,
     )
     session.add(generation)
 
@@ -86,6 +91,12 @@ async def get_user_generation(
     )
 
 
+async def get_generation(
+    session: AsyncSession, generation_id: uuid.UUID
+) -> Generation | None:
+    return await session.get(Generation, generation_id)
+
+
 async def list_user_generations(
     session: AsyncSession, user_id: uuid.UUID, limit: int, offset: int
 ) -> tuple[list[Generation], int]:
@@ -104,18 +115,20 @@ async def list_user_generations(
     return list(rows), total or 0
 
 
-def image_url(generation_id: uuid.UUID, role: ImageRole) -> str:
+def image_url(generation_id: uuid.UUID, role: ImageRole, *, admin: bool = False) -> str:
     prefix = settings.prefix
-    return (
-        f"{prefix.api_prefix}{prefix.generations_prefix}/{generation_id}"
-        f"/images/{role.value}"
+    section = (
+        f"{prefix.admin_prefix}{prefix.generations_prefix}"
+        if admin
+        else prefix.generations_prefix
     )
+    return f"{prefix.api_prefix}{section}/{generation_id}/images/{role.value}"
 
 
-def to_read(generation: Generation) -> GenerationRead:
+def to_read(generation: Generation, *, admin: bool = False) -> GenerationRead:
     roles = {image.role for image in generation.images}
     result_url = (
-        image_url(generation.id, ImageRole.RESULT)
+        image_url(generation.id, ImageRole.RESULT, admin=admin)
         if generation.status == GenerationStatus.DONE and ImageRole.RESULT in roles
         else None
     )
@@ -127,9 +140,23 @@ def to_read(generation: Generation) -> GenerationRead:
         status=generation.status,
         params=GenerationParams.model_validate(generation.params),
         input_roles=input_roles,
+        used_bonus=generation.used_bonus,
         error=generation.error,
         created_at=generation.created_at,
         started_at=generation.started_at,
         finished_at=generation.finished_at,
         result_url=result_url,
+    )
+
+
+def quota_to_schema(quota: Quota) -> GenerationQuota:
+    return GenerationQuota(
+        plan=quota.plan,
+        daily_limit=quota.daily_limit,
+        daily_used=quota.daily_used,
+        daily_remaining=quota.daily_remaining,
+        bonus_remaining=quota.bonus_balance,
+        remaining=quota.remaining,
+        window_hours=quota.window_hours,
+        resets_at=quota.resets_at,
     )

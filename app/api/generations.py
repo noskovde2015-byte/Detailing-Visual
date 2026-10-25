@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.db.db_helper import db_helper
+from app.models.generation import Generation
 from app.models.generation_image import ImageRole
 from app.schemas.generation import (
     GenerationList,
@@ -26,7 +27,7 @@ from app.schemas.generation import (
     GenerationQuota,
     GenerationRead,
 )
-from app.services.generation_limits import DailyLimitExceededError, Quota, get_quota
+from app.services.generation_limits import GenerationLimitExceededError, get_quota
 from app.services.generation_rules import (
     GenerationInputError,
     validate_generation_input,
@@ -36,6 +37,7 @@ from app.services.generations import (
     create_generation,
     get_user_generation,
     list_user_generations,
+    quota_to_schema,
     to_read,
 )
 from app.services.image_generator import get_image_generator
@@ -45,17 +47,6 @@ from app.services.storage import StorageFileNotFoundError, get_storage
 router = APIRouter(prefix=settings.prefix.generations_prefix, tags=["generations"])
 
 READ_CHUNK_SIZE = 1024 * 1024
-
-
-def _quota_schema(quota: Quota) -> GenerationQuota:
-    return GenerationQuota(
-        plan=quota.plan,
-        limit=quota.limit,
-        used=quota.used,
-        remaining=quota.remaining,
-        window_hours=quota.window_hours,
-        resets_at=quota.resets_at,
-    )
 
 
 async def _read_limited(upload: UploadFile, field: str) -> bytes:
@@ -121,7 +112,10 @@ async def create(
         str,
         Form(description="JSON с параметрами (GenerationParams)"),
     ] = "{}",
-    film: Annotated[UploadFile | None, File(description="Образец плёнки")] = None,
+    film: Annotated[
+        UploadFile | None,
+        File(description="Образец плёнки. Не вместе с film_color в params"),
+    ] = None,
     wheel: Annotated[UploadFile | None, File(description="Фото дисков")] = None,
 ) -> GenerationRead:
     parsed = _parse_params(params)
@@ -159,7 +153,7 @@ async def create(
             processed,
             model_name=generator.name,
         )
-    except DailyLimitExceededError as exc:
+    except GenerationLimitExceededError as exc:
         headers = {}
         if exc.quota.resets_at is not None:
             seconds = max(
@@ -170,7 +164,7 @@ async def create(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
                 "message": "Лимит генераций исчерпан",
-                "quota": _quota_schema(exc.quota).model_dump(mode="json"),
+                "quota": quota_to_schema(exc.quota).model_dump(mode="json"),
             },
             headers=headers,
         ) from None
@@ -198,7 +192,7 @@ async def list_generations(
 
 @router.get("/quota", response_model=GenerationQuota, summary="Оставшийся лимит")
 async def quota(user: CurrentUser, session: SessionDep) -> GenerationQuota:
-    return _quota_schema(await get_quota(session, user.id, user.plan))
+    return quota_to_schema(await get_quota(session, user.id, user.plan))
 
 
 @router.get("/{generation_id}", response_model=GenerationRead, summary="Статус")
@@ -227,7 +221,12 @@ async def image(
     generation = await get_user_generation(session, user.id, generation_id)
     if generation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Генерация не найдена")
+    return await generation_image_response(generation, role, download=download)
 
+
+async def generation_image_response(
+    generation: Generation, role: ImageRole, *, download: bool
+) -> Response:
     stored = next((img for img in generation.images if img.role == role), None)
     if stored is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Изображение не найдено")
@@ -241,7 +240,7 @@ async def image(
 
     extension = stored.storage_key.rsplit(".", 1)[-1]
     disposition = "attachment" if download else "inline"
-    filename = f"detailing-{generation_id}-{role.value}.{extension}"
+    filename = f"detailing-{generation.id}-{role.value}.{extension}"
     return Response(
         content=data,
         media_type=stored.content_type,

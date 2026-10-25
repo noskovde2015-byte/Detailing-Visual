@@ -13,7 +13,7 @@ from app.services.image_generator import (
     ImageGenerationError,
     ImageGenerator,
 )
-from app.services.prompt_builder import build_prompt, ordered_roles
+from app.services.model_request import build_model_request
 from app.services.storage import Storage, build_image_key
 
 logger = logging.getLogger(__name__)
@@ -86,22 +86,17 @@ async def run_generation(
                 return
 
             params = GenerationParams.model_validate(generation.params)
-            inputs = {
-                ImageRole(image.role): image
+            uploaded = {
+                ImageRole(image.role): ImageData(
+                    data=await storage.read(image.storage_key),
+                    mime_type=image.content_type,
+                )
                 for image in generation.images
                 if image.role != ImageRole.RESULT
             }
-            roles = ordered_roles(inputs.keys())
-            images = [
-                ImageData(
-                    data=await storage.read(inputs[role].storage_key),
-                    mime_type=inputs[role].content_type,
-                )
-                for role in roles
-            ]
 
-            prompt = build_prompt(params, roles)
-            result = await generator.generate(prompt, images)
+            request = build_model_request(params, uploaded)
+            result = await generator.generate(request.prompt, request.images)
 
             result_key = build_image_key(
                 generation_id, ImageRole.RESULT, result.mime_type

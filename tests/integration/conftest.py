@@ -51,13 +51,14 @@ def storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LocalStorage:
 
 @pytest.fixture
 async def make_user(db: None) -> Callable[..., object]:
-    async def _make(plan: str = "free") -> User:
+    async def _make(plan: str = "free", is_admin: bool = False) -> User:
         async with db_helper.session_factory() as session:
             user = User(
                 google_sub=uuid.uuid4().hex,
                 email=f"{uuid.uuid4().hex}@example.com",
                 name="Test",
                 plan=plan,
+                is_admin=is_admin,
             )
             session.add(user)
             await session.commit()

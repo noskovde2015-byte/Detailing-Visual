@@ -23,12 +23,21 @@ def validate_generation_input(
     if params.wheels is not None and not has_wheel_photo:
         raise GenerationInputError("Размер дисков указан без фото дисков")
 
-    if params.film_finish is not None and ImageRole.FILM not in present:
-        raise GenerationInputError("Тип покрытия указан без фото плёнки")
+    has_film_photo = ImageRole.FILM in present
+    has_film_color = params.film_color is not None
+    if has_film_photo and has_film_color:
+        raise GenerationInputError(
+            "Выберите что-то одно: фото плёнки или цвет из палитры"
+        )
+    if params.film_finish is not None and not (has_film_photo or has_film_color):
+        raise GenerationInputError(
+            "Тип покрытия указан без фото плёнки и без цвета из палитры"
+        )
 
     has_changes = any(
         (
-            ImageRole.FILM in present,
+            has_film_photo,
+            has_film_color,
             has_wheel_photo,
             params.antichrome,
             params.tint,

@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from app.api import generations as generations_api
 from app.core.config import settings
+from app.services.colors import render_swatch
 from app.services.image_generator import (
     GenerationRefusedError,
     ImageData,
@@ -114,7 +115,10 @@ async def test_daily_limit(client: AsyncClient, make_user) -> None:
     assert "retry-after" in response.headers
 
     quota = (await client.get(f"{URL}/quota")).json()
-    assert quota == quota | {"limit": limit, "used": limit, "remaining": 0}
+    assert quota["daily_limit"] == limit
+    assert quota["daily_used"] == limit
+    assert quota["remaining"] == 0
+    assert quota["resets_at"] is not None
 
 
 async def test_failed_generation_not_counted(
@@ -136,7 +140,7 @@ async def test_failed_generation_not_counted(
     assert body["result_url"] is None
 
     quota = (await client.get(f"{URL}/quota")).json()
-    assert quota["used"] == 0
+    assert quota["daily_used"] == 0
 
 
 async def test_other_user_cannot_see_generation(client: AsyncClient, make_user) -> None:
@@ -156,3 +160,53 @@ async def test_history_is_paginated(client: AsyncClient, make_user) -> None:
     page = (await client.get(URL, params={"limit": 2})).json()
     assert page["total"] == 3
     assert len(page["items"]) == 2
+
+
+async def test_palette_color_flow(
+    client: AsyncClient, make_user, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class CapturingGenerator(ImageGenerator):
+        name = "capturing"
+
+        async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+            captured["prompt"] = prompt
+            captured["images"] = list(images)
+            return images[0]
+
+    monkeypatch.setattr(generations_api, "get_image_generator", CapturingGenerator)
+    login(client, await make_user())
+
+    response = await _create(client, {"film_color": "#1f0101", "film_finish": "matte"})
+    assert response.status_code == 202, response.text
+    created = response.json()
+    assert created["params"]["film_color"] == "#1F0101"
+    assert created["input_roles"] == ["car"]
+
+    body = (await client.get(f"{URL}/{created['id']}")).json()
+    assert body["status"] == "done", body
+
+    images = captured["images"]
+    assert len(images) == 2
+    assert images[1] == ImageData(data=render_swatch("#1F0101"), mime_type="image/png")
+    assert "very dark red" in captured["prompt"]
+    assert "MATTE" in captured["prompt"]
+
+    swatch = await client.get(f"{URL}/{created['id']}/images/film")
+    assert swatch.status_code == 404
+
+
+async def test_film_photo_and_color_rejected(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    response = await _create(
+        client, {"film_color": "#1F0101"}, film=image_file("film.jpg")
+    )
+    assert response.status_code == 422
+    assert "что-то одно" in response.json()["detail"]
+
+
+async def test_invalid_color_rejected(client: AsyncClient, make_user) -> None:
+    login(client, await make_user())
+    response = await _create(client, {"film_color": "red"})
+    assert response.status_code == 422

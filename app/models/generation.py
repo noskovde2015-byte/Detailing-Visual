@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,9 @@ class Generation(Base):
     )
     params: Mapped[dict] = mapped_column(JSONB, default=dict)
     model: Mapped[str | None] = mapped_column(String(100))
+    used_bonus: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

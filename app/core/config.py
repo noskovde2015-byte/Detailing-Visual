@@ -21,6 +21,7 @@ class ApiPrefix(BaseModel):
     auth_prefix: str = "/auth"
     users_prefix: str = "/users"
     generations_prefix: str = "/generations"
+    admin_prefix: str = "/admin"
 
 
 class DataBaseConfig(BaseModel):

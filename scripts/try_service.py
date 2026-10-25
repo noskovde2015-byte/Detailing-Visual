@@ -9,7 +9,7 @@ from app.models.generation_image import ImageRole
 from app.schemas.generation import FilmFinish, GenerationParams, WheelParams
 from app.services.generation_rules import validate_generation_input
 from app.services.image_generator import ImageData, get_image_generator
-from app.services.prompt_builder import build_prompt, ordered_roles
+from app.services.model_request import build_model_request
 from app.services.storage import build_image_key, get_storage
 
 
@@ -17,6 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Проверка цепочки генерации")
     parser.add_argument("--car", type=Path, required=True)
     parser.add_argument("--film", type=Path)
+    parser.add_argument("--color", help="Цвет плёнки из палитры, например #1F0101")
     parser.add_argument("--finish", choices=[f.value for f in FilmFinish])
     parser.add_argument("--wheel", type=Path)
     parser.add_argument("--wheel-from", type=int)
@@ -52,6 +53,7 @@ async def main() -> None:
         antichrome=args.antichrome,
         tint=args.tint,
         film_finish=FilmFinish(args.finish) if args.finish else None,
+        film_color=args.color,
         wheels=wheels,
         comment=args.comment,
     )
@@ -64,15 +66,14 @@ async def main() -> None:
 
     validate_generation_input(params, files.keys())
 
-    prompt = build_prompt(params, files.keys())
-    ordered = [files[role] for role in ordered_roles(files.keys())]
+    request = build_model_request(params, files)
 
     print("=== PROMPT ===")
-    print(prompt)
+    print(request.prompt)
     print("==============")
 
     started = time.perf_counter()
-    result = await get_image_generator().generate(prompt, ordered)
+    result = await get_image_generator().generate(request.prompt, request.images)
     print(f"Готово за {time.perf_counter() - started:.1f} с")
 
     generation_id = uuid4()

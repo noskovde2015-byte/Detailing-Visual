@@ -1,17 +1,46 @@
-from collections.abc import Callable, Collection
+import enum
+from collections.abc import Callable, Collection, Sequence
 
 from app.models.generation_image import ImageRole
 from app.schemas.generation import FilmFinish, GenerationParams
+from app.services.colors import describe_color, parse_hex
+
+
+class InputSlot(enum.StrEnum):
+    """Картинка, которую получает модель.
+
+    Отличается от ImageRole: образец цвета не загружается пользователем
+    и не хранится, а рисуется из параметров перед отправкой в модель.
+    """
+
+    CAR = "car"
+    FILM = "film"
+    COLOR_SWATCH = "color_swatch"
+    WHEEL = "wheel"
+
 
 # Порядок, в котором картинки передаются в модель. От него зависит нумерация в промпте.
-INPUT_ORDER: tuple[ImageRole, ...] = (ImageRole.CAR, ImageRole.FILM, ImageRole.WHEEL)
+# FILM и COLOR_SWATCH взаимоисключающие, поэтому образец занимает место плёнки.
+INPUT_ORDER: tuple[InputSlot, ...] = (
+    InputSlot.CAR,
+    InputSlot.FILM,
+    InputSlot.COLOR_SWATCH,
+    InputSlot.WHEEL,
+)
+
+UPLOADED_SLOTS: dict[ImageRole, InputSlot] = {
+    ImageRole.CAR: InputSlot.CAR,
+    ImageRole.FILM: InputSlot.FILM,
+    ImageRole.WHEEL: InputSlot.WHEEL,
+}
 
 ORDINALS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
 
-IMAGE_DESCRIPTIONS: dict[ImageRole, str] = {
-    ImageRole.CAR: "a photo of a car",
-    ImageRole.FILM: "a sample of a car wrap film",
-    ImageRole.WHEEL: "a photo of car wheels",
+IMAGE_DESCRIPTIONS: dict[InputSlot, str] = {
+    InputSlot.CAR: "a photo of a car",
+    InputSlot.FILM: "a sample of a car wrap film",
+    InputSlot.COLOR_SWATCH: "a flat swatch of the target wrap color",
+    InputSlot.WHEEL: "a photo of car wheels",
 }
 
 FINISH_DESCRIPTIONS: dict[FilmFinish, str] = {
@@ -31,6 +60,9 @@ FINISH_DESCRIPTIONS: dict[FilmFinish, str] = {
     ),
 }
 
+# Если пользователь выбрал цвет, но не тип покрытия, рисуем как заводскую краску.
+DEFAULT_COLOR_FINISH = FilmFinish.GLOSSY
+
 RULES = """Rules:
 - Change only the car. Do not alter anything that is not part of the car.
 - Keep unchanged: the background, the lighting, the camera angle, the car's shape and proportions, the license plate and everything else not mentioned in the tasks above.
@@ -39,28 +71,33 @@ RULES = """Rules:
 
 COMMENT_DELIMITER = '"""'
 
-TaskBuilder = Callable[[GenerationParams, dict[ImageRole, str]], str | None]
+TaskBuilder = Callable[[GenerationParams, dict[InputSlot, str]], str | None]
 
 
-def ordered_roles(roles: Collection[ImageRole]) -> list[ImageRole]:
-    present = set(roles)
-    return [role for role in INPUT_ORDER if role in present]
+def input_slots(
+    params: GenerationParams, roles: Collection[ImageRole]
+) -> list[InputSlot]:
+    """Картинки для модели в том порядке, в котором их нужно передать."""
+    present = {UPLOADED_SLOTS[role] for role in roles if role in UPLOADED_SLOTS}
+    if params.film_color is not None:
+        present.add(InputSlot.COLOR_SWATCH)
+    return [slot for slot in INPUT_ORDER if slot in present]
 
 
-def _intro(roles: list[ImageRole]) -> str:
-    lines = [f"You are given {len(roles)} image(s)."]
-    for index, role in enumerate(roles, start=1):
-        lines.append(f"The {ORDINALS[index]} image is {IMAGE_DESCRIPTIONS[role]}.")
+def _intro(slots: Sequence[InputSlot]) -> str:
+    lines = [f"You are given {len(slots)} image(s)."]
+    for index, slot in enumerate(slots, start=1):
+        lines.append(f"The {ORDINALS[index]} image is {IMAGE_DESCRIPTIONS[slot]}.")
     lines.append("Edit the first image (the car photo) according to the tasks below.")
     return " ".join(lines)
 
 
-def _film_task(params: GenerationParams, refs: dict[ImageRole, str]) -> str | None:
-    if ImageRole.FILM not in refs:
+def _film_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | None:
+    if InputSlot.FILM not in refs:
         return None
     text = (
         f"Recolor the car's painted body panels so they look wrapped in the film shown "
-        f"in the {refs[ImageRole.FILM]} image. Match the film's color, texture and "
+        f"in the {refs[InputSlot.FILM]} image. Match the film's color, texture and "
         f"any visible pattern as closely as possible."
     )
     if params.film_finish is not None:
@@ -68,8 +105,24 @@ def _film_task(params: GenerationParams, refs: dict[ImageRole, str]) -> str | No
     return text
 
 
+def _color_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | None:
+    if InputSlot.COLOR_SWATCH not in refs or params.film_color is None:
+        return None
+    rgb = parse_hex(params.film_color)
+    finish = params.film_finish or DEFAULT_COLOR_FINISH
+    return (
+        f"Recolor the car's painted body panels so they look wrapped in a solid "
+        f"{describe_color(rgb)} film (HEX {rgb.hex}, RGB {rgb.red}, {rgb.green}, "
+        f"{rgb.blue}). The exact color is shown in the {refs[InputSlot.COLOR_SWATCH]} "
+        f"image. The swatch shows only the base color under neutral light: render it "
+        f"with the scene's real lighting, shading and reflections, so darker and "
+        f"brighter areas of the body vary naturally around this color. Do not add any "
+        f"pattern or texture. The film finish is {FINISH_DESCRIPTIONS[finish]}"
+    )
+
+
 def _antichrome_task(
-    params: GenerationParams, refs: dict[ImageRole, str]
+    params: GenerationParams, refs: dict[InputSlot, str]
 ) -> str | None:
     if not params.antichrome:
         return None
@@ -79,7 +132,7 @@ def _antichrome_task(
     )
 
 
-def _tint_task(params: GenerationParams, refs: dict[ImageRole, str]) -> str | None:
+def _tint_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | None:
     if not params.tint:
         return None
     return (
@@ -107,13 +160,13 @@ def _wheel_size_hint(current: int, new: int) -> str:
     )
 
 
-def _wheels_task(params: GenerationParams, refs: dict[ImageRole, str]) -> str | None:
-    if ImageRole.WHEEL not in refs or params.wheels is None:
+def _wheels_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | None:
+    if InputSlot.WHEEL not in refs or params.wheels is None:
         return None
     wheels = params.wheels
     text = (
         f"The car currently has {wheels.current_size}-inch wheels. Replace all visible "
-        f"wheels with the wheel design shown in the {refs[ImageRole.WHEEL]} image, "
+        f"wheels with the wheel design shown in the {refs[InputSlot.WHEEL]} image, "
         f"sized as {wheels.new_size}-inch wheels. "
         f"{_wheel_size_hint(wheels.current_size, wheels.new_size)} "
         f"Keep the overall height of the wheel with tire close to the original, so the "
@@ -127,6 +180,7 @@ def _wheels_task(params: GenerationParams, refs: dict[ImageRole, str]) -> str | 
 
 TASK_BUILDERS: tuple[TaskBuilder, ...] = (
     _film_task,
+    _color_task,
     _antichrome_task,
     _tint_task,
     _wheels_task,
@@ -138,14 +192,14 @@ def _sanitize_comment(comment: str) -> str:
 
 
 def build_prompt(params: GenerationParams, roles: Collection[ImageRole]) -> str:
-    ordered = ordered_roles(roles)
-    refs = {role: ORDINALS[index] for index, role in enumerate(ordered, start=1)}
+    slots = input_slots(params, roles)
+    refs = {slot: ORDINALS[index] for index, slot in enumerate(slots, start=1)}
 
     tasks = [
         task for builder in TASK_BUILDERS if (task := builder(params, refs)) is not None
     ]
 
-    parts = [_intro(ordered)]
+    parts = [_intro(slots)]
     if tasks:
         numbered = "\n".join(f"{i}. {task}" for i, task in enumerate(tasks, start=1))
         parts.append(f"Tasks:\n{numbered}")

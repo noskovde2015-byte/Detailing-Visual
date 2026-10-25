@@ -31,6 +31,18 @@ async def get_current_user(request: Request, session: SessionDep) -> User:
     user = await get_user_by_id(session, user_id)
     if user is None:
         raise unauthorized
+    if user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Аккаунт заблокирован"
+        )
+    return user
+
+
+async def get_current_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав"
+        )
     return user
 
 
@@ -42,4 +54,5 @@ def get_client_info(request: Request) -> ClientInfo:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 ClientInfoDep = Annotated[ClientInfo, Depends(get_client_info)]

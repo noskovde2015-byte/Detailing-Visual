@@ -24,6 +24,7 @@ from app.services.users import (
     AccountConflictError,
     GoogleProfile,
     get_or_create_google_user,
+    get_user_by_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,9 @@ async def google_callback(
         logger.warning("Конфликт аккаунтов при входе, sub=%s", userinfo["sub"])
         return _login_error("account_conflict")
 
+    if user.is_blocked:
+        return _login_error("blocked")
+
     refresh_token = await create_refresh_session(session, user.id, client)
 
     response = _frontend_redirect()
@@ -139,6 +143,10 @@ async def refresh(
         if not token:
             raise InvalidRefreshTokenError
         issued = await rotate_refresh_session(session, token, client)
+        user = await get_user_by_id(session, issued.user_id)
+        if user is None or user.is_blocked:
+            await revoke_all_user_sessions(session, issued.user_id)
+            raise InvalidRefreshTokenError
     except InvalidRefreshTokenError:
         response = JSONResponse(
             {"detail": "Сессия истекла, войдите заново"},

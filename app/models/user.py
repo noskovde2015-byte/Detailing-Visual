@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -22,6 +22,12 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(255))
     plan: Mapped[str] = mapped_column(
         String(20), default=UserPlan.FREE.value, server_default=UserPlan.FREE.value
+    )
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

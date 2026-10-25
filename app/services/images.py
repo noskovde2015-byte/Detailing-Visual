@@ -61,7 +61,9 @@ def process_upload(raw: bytes) -> ProcessedImage:
     ) as exc:
         raise InvalidImageError("Файл повреждён или не является изображением") from exc
 
-    image.thumbnail((limits.max_image_side, limits.max_image_side), Image.LANCZOS)
+    image.thumbnail(
+        (limits.max_image_side, limits.max_image_side), Image.Resampling.LANCZOS
+    )
 
     has_alpha = image.mode in ("RGBA", "LA") or (
         image.mode == "P" and "transparency" in image.info
