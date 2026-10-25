@@ -1,7 +1,14 @@
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field, PostgresDsn, SecretStr
+from pydantic import (
+    BaseModel,
+    Field,
+    PostgresDsn,
+    RedisDsn,
+    SecretStr,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -51,6 +58,39 @@ class GenerationConfig(BaseModel):
     max_image_pixels: int = Field(default=50_000_000, gt=0)
 
 
+class RedisConfig(BaseModel):
+    url: RedisDsn = RedisDsn("redis://localhost:6379/0")
+
+
+class QueueConfig(BaseModel):
+    """Очередь генераций.
+
+    arq — задачи уходят в Redis и выполняются отдельным процессом-воркером
+    (`arq app.worker.WorkerSettings`). Так в продакшене.
+    background — задачи выполняются внутри процесса API, Redis не нужен.
+    Только для разработки и тестов: при перезапуске API задачи теряются.
+    """
+
+    backend: Literal["arq", "background"] = "arq"
+    name: str = "detailing:generations"
+    max_concurrent_generations: int = Field(default=4, ge=1)
+    job_timeout_seconds: int = Field(default=480, ge=30)
+    max_tries: int = Field(default=3, ge=1)
+    retry_delay_seconds: int = Field(default=60, ge=1)
+    stale_check_interval_minutes: int = Field(default=5, ge=1, le=59)
+    stale_pending_minutes: int = Field(default=60, ge=1)
+    stale_processing_minutes: int = Field(default=15, ge=1)
+
+    @model_validator(mode="after")
+    def _check_stale_thresholds(self) -> Self:
+        # Иначе уборщик пометит неудачной генерацию, которая ещё честно выполняется.
+        if self.stale_processing_minutes * 60 <= self.job_timeout_seconds:
+            raise ValueError(
+                "stale_processing_minutes должен быть больше job_timeout_seconds"
+            )
+        return self
+
+
 class StorageConfig(BaseModel):
     backend: Literal["local"] = "local"
     local_path: Path = BASE_DIR / "storage"
@@ -91,6 +131,8 @@ class Settings(BaseSettings):
     gemini: GeminiConfig = GeminiConfig()
     generation: GenerationConfig = GenerationConfig()
     storage: StorageConfig = StorageConfig()
+    redis: RedisConfig = RedisConfig()
+    queue: QueueConfig = QueueConfig()
     google: GoogleOAuthConfig
     auth: AuthConfig
 

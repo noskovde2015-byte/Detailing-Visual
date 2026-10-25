@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -11,18 +12,36 @@ from app.api import admin, auth, generations, health, users
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.db.db_helper import db_helper
+from app.services.generation_queue import ArqGenerationQueue
 from app.services.generation_runner import fail_stale_generations
 
-STALE_GENERATION_AFTER = timedelta(minutes=15)
-
 setup_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    await fail_stale_generations(db_helper.session_factory, STALE_GENERATION_AFTER)
-    yield
-    await db_helper.dispose()
+    queue: ArqGenerationQueue | None = None
+    if settings.queue.backend == "arq":
+        # Зависшие задачи убирает воркер по расписанию. Здесь этого делать нельзя:
+        # перезапуск API больше не обрывает генерации, они живут в воркере.
+        queue = await ArqGenerationQueue.connect()
+        app.state.generation_queue = queue
+    else:
+        # В режиме background генерации выполнялись внутри этого процесса
+        # и оборвались вместе с ним, поэтому всё незавершённое — зависшее.
+        logger.warning("Очередь генераций: background (только для разработки)")
+        await fail_stale_generations(
+            db_helper.session_factory,
+            pending_older_than=timedelta(0),
+            processing_older_than=timedelta(0),
+        )
+    try:
+        yield
+    finally:
+        if queue is not None:
+            await queue.close()
+        await db_helper.dispose()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

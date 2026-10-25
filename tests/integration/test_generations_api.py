@@ -1,4 +1,5 @@
 import json
+import uuid
 from collections.abc import Sequence
 
 import pytest
@@ -6,7 +7,9 @@ from httpx import AsyncClient
 
 from app.api import generations as generations_api
 from app.core.config import settings
+from app.main import app
 from app.services.colors import render_swatch
+from app.services.generation_queue import GenerationQueue, QueueUnavailableError
 from app.services.image_generator import (
     GenerationRefusedError,
     ImageData,
@@ -210,3 +213,23 @@ async def test_invalid_color_rejected(client: AsyncClient, make_user) -> None:
     login(client, await make_user())
     response = await _create(client, {"film_color": "red"})
     assert response.status_code == 422
+
+
+async def test_queue_unavailable_returns_503_and_refunds(
+    client: AsyncClient, make_user
+) -> None:
+    class BrokenQueue(GenerationQueue):
+        async def enqueue(self, generation_id: uuid.UUID) -> None:
+            raise QueueUnavailableError("redis is down")
+
+    app.dependency_overrides[generations_api.get_generation_queue] = BrokenQueue
+    try:
+        login(client, await make_user())
+        response = await _create(client)
+    finally:
+        app.dependency_overrides.pop(generations_api.get_generation_queue, None)
+
+    assert response.status_code == 503
+    history = (await client.get(URL)).json()
+    assert history["items"][0]["status"] == "failed"
+    assert (await client.get(f"{URL}/quota")).json()["daily_used"] == 0

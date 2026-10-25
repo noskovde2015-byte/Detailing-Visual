@@ -22,7 +22,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wheel", type=Path)
     parser.add_argument("--wheel-from", type=int)
     parser.add_argument("--wheel-to", type=int)
-    parser.add_argument("--wheel-color")
     parser.add_argument("--antichrome", action="store_true")
     parser.add_argument("--tint", action="store_true")
     parser.add_argument("--comment")
@@ -43,11 +42,7 @@ async def main() -> None:
     if args.wheel:
         if args.wheel_from is None or args.wheel_to is None:
             raise SystemExit("Для --wheel нужны --wheel-from и --wheel-to")
-        wheels = WheelParams(
-            current_size=args.wheel_from,
-            new_size=args.wheel_to,
-            color=args.wheel_color,
-        )
+        wheels = WheelParams(current_size=args.wheel_from, new_size=args.wheel_to)
 
     params = GenerationParams(
         antichrome=args.antichrome,

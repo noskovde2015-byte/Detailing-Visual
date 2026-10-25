@@ -34,6 +34,21 @@ class ImageGenerator(ABC):
     async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData: ...
 
 
+def configured_model_name() -> str:
+    """Имя модели, которой будет выполнена генерация.
+
+    Нужно API, чтобы записать его в генерацию, не создавая клиента Gemini:
+    генерацию выполняет воркер, и API не должен зависеть от ключа модели.
+    """
+    from app.core.config import settings
+
+    match settings.generation.backend:
+        case "gemini":
+            return settings.gemini.model
+        case backend:
+            return backend
+
+
 @lru_cache
 def get_image_generator() -> ImageGenerator:
     from app.core.config import settings

@@ -30,7 +30,6 @@ class WheelParams(BaseModel):
 
     current_size: int = Field(ge=WHEEL_SIZE_MIN, le=WHEEL_SIZE_MAX)
     new_size: int = Field(ge=WHEEL_SIZE_MIN, le=WHEEL_SIZE_MAX)
-    color: str | None = Field(default=None, max_length=50)
 
 
 class GenerationParams(BaseModel):

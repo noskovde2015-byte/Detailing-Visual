@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -6,10 +7,12 @@ from typing import Annotated
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Depends,
     File,
     Form,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
     status,
@@ -28,11 +31,20 @@ from app.schemas.generation import (
     GenerationRead,
 )
 from app.services.generation_limits import GenerationLimitExceededError, get_quota
+from app.services.generation_queue import (
+    BackgroundGenerationQueue,
+    GenerationQueue,
+    QueueUnavailableError,
+)
 from app.services.generation_rules import (
     GenerationInputError,
     validate_generation_input,
 )
-from app.services.generation_runner import run_generation
+from app.services.generation_runner import (
+    QUEUE_UNAVAILABLE_ERROR,
+    mark_failed,
+    run_generation,
+)
 from app.services.generations import (
     create_generation,
     get_user_generation,
@@ -40,9 +52,14 @@ from app.services.generations import (
     quota_to_schema,
     to_read,
 )
-from app.services.image_generator import get_image_generator
+from app.services.image_generator import (
+    configured_model_name,
+    get_image_generator,
+)
 from app.services.images import InvalidImageError, ProcessedImage, process_upload
 from app.services.storage import StorageFileNotFoundError, get_storage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix=settings.prefix.generations_prefix, tags=["generations"])
 
@@ -93,7 +110,19 @@ async def _execute(generation_id: uuid.UUID) -> None:
         session_factory=db_helper.session_factory,
         generator=get_image_generator(),
         storage=get_storage(),
+        timeout_seconds=settings.queue.job_timeout_seconds,
     )
+
+
+def get_generation_queue(
+    request: Request, background_tasks: BackgroundTasks
+) -> GenerationQueue:
+    if settings.queue.backend == "background":
+        return BackgroundGenerationQueue(background_tasks, _execute)
+    return request.app.state.generation_queue
+
+
+QueueDep = Annotated[GenerationQueue, Depends(get_generation_queue)]
 
 
 @router.post(
@@ -105,7 +134,7 @@ async def _execute(generation_id: uuid.UUID) -> None:
 async def create(
     user: CurrentUser,
     session: SessionDep,
-    background_tasks: BackgroundTasks,
+    queue: QueueDep,
     response: Response,
     car: Annotated[UploadFile, File(description="Фото автомобиля")],
     params: Annotated[
@@ -143,7 +172,6 @@ async def create(
         )
     )
 
-    generator = get_image_generator()
     try:
         generation = await create_generation(
             session,
@@ -151,7 +179,7 @@ async def create(
             user,
             parsed,
             processed,
-            model_name=generator.name,
+            model_name=configured_model_name(),
         )
     except GenerationLimitExceededError as exc:
         headers = {}
@@ -169,7 +197,20 @@ async def create(
             headers=headers,
         ) from None
 
-    background_tasks.add_task(_execute, generation.id)
+    try:
+        await queue.enqueue(generation.id)
+    except QueueUnavailableError:
+        logger.exception("Не удалось поставить генерацию %s в очередь", generation.id)
+        # Генерация уже сохранена и заняла лимит. Помечаем её неудачной,
+        # чтобы лимит вернулся, а не висел pending до уборщика.
+        await mark_failed(
+            db_helper.session_factory, generation.id, QUEUE_UNAVAILABLE_ERROR
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=QUEUE_UNAVAILABLE_ERROR,
+        ) from None
+
     response.headers["Location"] = (
         f"{settings.prefix.api_prefix}{settings.prefix.generations_prefix}"
         f"/{generation.id}"

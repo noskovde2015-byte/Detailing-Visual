@@ -14,3 +14,4 @@ os.environ.setdefault(
 )
 os.environ["APP_CONFIG__GENERATION__BACKEND"] = "fake"
 os.environ["APP_CONFIG__GENERATION__FAKE_DELAY_SECONDS"] = "0"
+os.environ["APP_CONFIG__QUEUE__BACKEND"] = "background"

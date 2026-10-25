@@ -164,18 +164,16 @@ def _wheels_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | 
     if InputSlot.WHEEL not in refs or params.wheels is None:
         return None
     wheels = params.wheels
-    text = (
+    return (
         f"The car currently has {wheels.current_size}-inch wheels. Replace all visible "
-        f"wheels with the wheel design shown in the {refs[InputSlot.WHEEL]} image, "
+        f"wheels with the wheels shown in the {refs[InputSlot.WHEEL]} image, keeping "
+        f"their design, color and finish exactly as in that photo, "
         f"sized as {wheels.new_size}-inch wheels. "
         f"{_wheel_size_hint(wheels.current_size, wheels.new_size)} "
         f"Keep the overall height of the wheel with tire close to the original, so the "
         f"car's stance and ride height do not change. Fit the wheels realistically to "
         f"the car's perspective, lighting and shadows."
     )
-    if wheels.color:
-        text += f" Wheel color: {wheels.color}."
-    return text
 
 
 TASK_BUILDERS: tuple[TaskBuilder, ...] = (
