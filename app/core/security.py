@@ -64,6 +64,5 @@ def generate_refresh_token() -> str:
 
 
 def hash_refresh_token(token: str) -> str:
-    """В БД хранится только SHA-256: утечка базы не даёт рабочих токенов.
-    """
+    """В БД хранится только SHA-256: утечка базы не даёт рабочих токенов."""
     return hashlib.sha256(token.encode()).hexdigest()
