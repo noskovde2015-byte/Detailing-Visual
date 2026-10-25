@@ -121,6 +121,8 @@ class Settings(BaseSettings):
         case_sensitive=False,
         env_prefix="APP_CONFIG__",
         env_nested_delimiter="__",
+
+        extra="ignore",
     )
 
     app_name: str = "Detailing.Visual"

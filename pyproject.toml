@@ -17,6 +17,7 @@ itsdangerous = "^2.2.0"
 pyjwt = "^2.15.1"
 pillow = "^13.0.0"
 python-multipart = "^0.0.32"
+arq = "^0.28.0"
 
 [dependency-groups]
 dev = [

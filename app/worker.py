@@ -102,3 +102,5 @@ class WorkerSettings:
     max_jobs = queue_config.max_concurrent_generations
     # Дать идущим генерациям закончиться при остановке (деплой), а не обрывать их.
     job_completion_wait = queue_config.job_timeout_seconds
+
+    health_check_interval = 30
