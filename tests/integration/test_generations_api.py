@@ -105,24 +105,16 @@ async def test_too_large_upload_rejected(
     assert response.status_code == 413
 
 
-async def test_daily_limit(client: AsyncClient, make_user) -> None:
-    login(client, await make_user())
-    limit = settings.generation.free_daily_limit
+async def test_empty_balance_returns_402(client: AsyncClient, make_user) -> None:
+    login(client, await make_user(balance=2))
 
-    for _ in range(limit):
+    for _ in range(2):
         assert (await _create(client)).status_code == 202
 
     response = await _create(client)
-    assert response.status_code == 429
-    detail = response.json()["detail"]
-    assert detail["quota"]["remaining"] == 0
-    assert "retry-after" in response.headers
-
-    quota = (await client.get(f"{URL}/quota")).json()
-    assert quota["daily_limit"] == limit
-    assert quota["daily_used"] == limit
-    assert quota["remaining"] == 0
-    assert quota["resets_at"] is not None
+    assert response.status_code == 402
+    assert response.json()["detail"]["balance"] == 0
+    assert (await client.get("/api/users/me")).json()["balance"] == 0
 
 
 async def test_failed_generation_not_counted(
@@ -143,8 +135,7 @@ async def test_failed_generation_not_counted(
     assert body["error"] == "Модель не смогла обработать это фото."
     assert body["result_url"] is None
 
-    quota = (await client.get(f"{URL}/quota")).json()
-    assert quota["daily_used"] == 0
+    assert (await client.get("/api/users/me")).json()["balance"] == 10
 
 
 async def test_other_user_cannot_see_generation(client: AsyncClient, make_user) -> None:
@@ -157,7 +148,7 @@ async def test_other_user_cannot_see_generation(client: AsyncClient, make_user) 
 
 
 async def test_history_is_paginated(client: AsyncClient, make_user) -> None:
-    login(client, await make_user(plan="pro"))
+    login(client, await make_user())
     for _ in range(3):
         await _create(client)
 
@@ -233,7 +224,7 @@ async def test_queue_unavailable_returns_503_and_refunds(
     assert response.status_code == 503
     history = (await client.get(URL)).json()
     assert history["items"][0]["status"] == "failed"
-    assert (await client.get(f"{URL}/quota")).json()["daily_used"] == 0
+    assert (await client.get("/api/users/me")).json()["balance"] == 10
 
 
 async def test_full_flow_with_s3_storage(

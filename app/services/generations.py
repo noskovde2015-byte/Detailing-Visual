@@ -10,12 +10,8 @@ from app.core.config import settings
 from app.models.generation import Generation, GenerationStatus
 from app.models.generation_image import INPUT_ROLES, GenerationImage, ImageRole
 from app.models.user import User
-from app.schemas.generation import GenerationParams, GenerationQuota, GenerationRead
-from app.services.generation_limits import (
-    GenerationLimitExceededError,
-    Quota,
-    get_quota,
-)
+from app.schemas.generation import GenerationParams, GenerationRead
+from app.services.balance import InsufficientBalanceError, get_balance, lock_user
 from app.services.images import ProcessedImage
 from app.services.storage import Storage, build_image_key
 
@@ -32,16 +28,17 @@ async def create_generation(
 ) -> Generation:
     """Создаёт генерацию в статусе pending вместе с входными файлами.
 
-    Проверка лимита и вставка идут в одной транзакции под блокировкой строки
-    пользователя: параллельные запросы одного пользователя выстраиваются в
-    очередь и не могут вместе превысить лимит.
+    Генерация сразу занимает единицу баланса. Проверка баланса и вставка идут
+    в одной транзакции под блокировкой строки пользователя: параллельные
+    запросы выстраиваются в очередь и не могут потратить больше, чем есть.
+    Если генерация не удастся, единица вернётся (failed не считается).
     """
-    await session.execute(select(User.id).where(User.id == user.id).with_for_update())
+    await lock_user(session, user.id)
 
-    quota = await get_quota(session, user.id, user.plan)
-    if quota.remaining <= 0:
+    balance = await get_balance(session, user.id)
+    if balance <= 0:
         await session.rollback()
-        raise GenerationLimitExceededError(quota)
+        raise InsufficientBalanceError(balance)
 
     generation = Generation(
         id=uuid.uuid4(),
@@ -49,7 +46,7 @@ async def create_generation(
         status=GenerationStatus.PENDING.value,
         params=params.model_dump(mode="json"),
         model=model_name,
-        used_bonus=quota.next_uses_bonus,
+        charged=True,
     )
     session.add(generation)
 
@@ -100,7 +97,7 @@ async def get_user_generation(
 
 async def soft_delete_generation(session: AsyncSession, generation: Generation) -> None:
     """Помечает генерацию удалённой. Строка остаётся, чтобы удаление не возвращало
-    лимит: иначе можно генерировать бесконечно, удаляя старые генерации.
+    генерацию на баланс: иначе можно генерировать бесконечно, удаляя старые.
     Файлы удаляет вызывающий (cleanup.purge_generation_files)."""
     if generation.status in (
         GenerationStatus.PENDING.value,
@@ -170,7 +167,6 @@ def to_read(generation: Generation, *, admin: bool = False) -> GenerationRead:
         status=generation.status,
         params=GenerationParams.model_validate(generation.params),
         input_roles=input_roles,
-        used_bonus=generation.used_bonus,
         error=generation.error,
         created_at=generation.created_at,
         started_at=generation.started_at,
@@ -178,17 +174,4 @@ def to_read(generation: Generation, *, admin: bool = False) -> GenerationRead:
         deleted_at=generation.deleted_at,
         result_url=url_for(ImageRole.RESULT),
         preview_url=url_for(ImageRole.PREVIEW),
-    )
-
-
-def quota_to_schema(quota: Quota) -> GenerationQuota:
-    return GenerationQuota(
-        plan=quota.plan,
-        daily_limit=quota.daily_limit,
-        daily_used=quota.daily_used,
-        daily_remaining=quota.daily_remaining,
-        bonus_remaining=quota.bonus_balance,
-        remaining=quota.remaining,
-        window_hours=quota.window_hours,
-        resets_at=quota.resets_at,
     )

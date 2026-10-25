@@ -1,14 +1,13 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class UserRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: uuid.UUID
     email: str
     name: str | None
-    plan: str
+    is_admin: bool
+    balance: int
     created_at: datetime

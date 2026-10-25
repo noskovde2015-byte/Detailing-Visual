@@ -1,17 +1,20 @@
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
-from app.models.credit_grant import CreditGrant
+from app.models.credit_grant import CreditGrant, CreditGrantKind
 from app.models.user import User
-from app.services.generation_limits import get_bonus_balance
+from app.services.balance import InsufficientBalanceError, get_balance, lock_user
 
 
-class InsufficientBonusError(Exception):
-    def __init__(self, balance: int) -> None:
-        super().__init__(f"Нельзя списать больше остатка ({balance})")
-        self.balance = balance
+@dataclass(frozen=True, slots=True)
+class GrantRecord:
+    grant: CreditGrant
+    author_email: str | None
+    author_name: str | None
 
 
 async def grant_credits(
@@ -20,22 +23,23 @@ async def grant_credits(
     amount: int,
     reason: str | None,
     granted_by_id: uuid.UUID | None,
+    kind: CreditGrantKind = CreditGrantKind.ADMIN,
 ) -> CreditGrant:
-    """Начисляет (amount > 0) или списывает (amount < 0) бонусные генерации.
+    """Начисляет (amount > 0) или списывает (amount < 0) генерации.
 
-    Блокировка строки пользователя та же, что при создании генерации: списание
-    и одновременная генерация не уведут баланс в минус.
+    Списать больше, чем есть на балансе, нельзя.
     """
-    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
+    await lock_user(session, user_id)
 
     if amount < 0:
-        balance = await get_bonus_balance(session, user_id)
+        balance = await get_balance(session, user_id)
         if balance + amount < 0:
             await session.rollback()
-            raise InsufficientBonusError(balance)
+            raise InsufficientBalanceError(balance)
 
     grant = CreditGrant(
         user_id=user_id,
+        kind=kind.value,
         amount=amount,
         reason=reason,
         granted_by_id=granted_by_id,
@@ -48,17 +52,23 @@ async def grant_credits(
 
 async def list_grants(
     session: AsyncSession, user_id: uuid.UUID, limit: int, offset: int
-) -> tuple[list[CreditGrant], int]:
+) -> tuple[list[GrantRecord], int]:
     total = await session.scalar(
         select(func.count())
         .select_from(CreditGrant)
         .where(CreditGrant.user_id == user_id)
     )
-    rows = await session.scalars(
-        select(CreditGrant)
+    author = aliased(User)
+    rows = await session.execute(
+        select(CreditGrant, author.email, author.name)
+        .outerjoin(author, author.id == CreditGrant.granted_by_id)
         .where(CreditGrant.user_id == user_id)
         .order_by(CreditGrant.created_at.desc(), CreditGrant.id.desc())
         .limit(limit)
         .offset(offset)
     )
-    return list(rows), total or 0
+    records = [
+        GrantRecord(grant=grant, author_email=email, author_name=name)
+        for grant, email, name in rows.all()
+    ]
+    return records, total or 0

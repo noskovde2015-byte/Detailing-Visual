@@ -65,40 +65,42 @@ async def test_list_and_search_users(client: AsyncClient, make_user) -> None:
     assert nothing["total"] == 0
 
 
-async def test_grant_bonus_spent_after_daily_limit(
+async def _balance(client: AsyncClient) -> int:
+    return (await client.get("/api/users/me")).json()["balance"]
+
+
+async def test_granted_generations_are_spent_then_402(
     client: AsyncClient, make_user
 ) -> None:
     admin = await make_user(is_admin=True)
-    user = await make_user()
+    user = await make_user(balance=0)
 
     login(client, admin)
     response = await _grant(client, user.id, 2, "Компенсация за баг")
     assert response.status_code == 201, response.text
-    assert response.json()["granted_by_id"] == str(admin.id)
+    grant = response.json()
+    assert grant["kind"] == "admin"
+    assert grant["granted_by"]["email"] == admin.email
 
     login(client, user)
-    daily = settings.generation.free_daily_limit
-    for _ in range(daily):
-        body = (await _generate(client)).json()
-        assert body["used_bonus"] is False
-
+    assert await _balance(client) == 2
     for _ in range(2):
-        response = await _generate(client)
-        assert response.status_code == 202
-        assert response.json()["used_bonus"] is True
+        assert (await _generate(client)).status_code == 202
 
-    quota = (await client.get("/api/generations/quota")).json()
-    assert quota["bonus_remaining"] == 0
-    assert quota["remaining"] == 0
-    assert (await _generate(client)).status_code == 429
+    response = await _generate(client)
+    assert response.status_code == 402
+    assert response.json()["detail"] == {
+        "message": "Недостаточно генераций на балансе",
+        "balance": 0,
+    }
 
     login(client, admin)
     detail = (await client.get(f"{ADMIN}/users/{user.id}")).json()
-    assert detail["user"]["generations_total"] == daily + 2
-    assert detail["user"]["bonus_remaining"] == 0
+    assert detail["generations_total"] == 2
+    assert detail["balance"] == 0
 
 
-async def test_failed_bonus_generation_is_refunded(
+async def test_failed_generation_is_refunded(
     client: AsyncClient, make_user, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class RefusingGenerator(ImageGenerator):
@@ -107,35 +109,31 @@ async def test_failed_bonus_generation_is_refunded(
         async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
             raise GenerationRefusedError("Отказ")
 
-    admin = await make_user(is_admin=True)
-    user = await make_user()
-    login(client, admin)
-    await _grant(client, user.id, 1)
-    await client.patch(f"{ADMIN}/users/{user.id}", json={"plan": "free"})
-
-    monkeypatch.setattr(settings.generation, "free_daily_limit", 0)
     monkeypatch.setattr(generations_api, "get_image_generator", RefusingGenerator)
+    login(client, await make_user(balance=1))
 
-    login(client, user)
     body = (await _generate(client)).json()
-    assert body["used_bonus"] is True
-
-    quota = (await client.get("/api/generations/quota")).json()
-    assert quota["bonus_remaining"] == 1
+    assert (await client.get(f"/api/generations/{body['id']}")).json()[
+        "status"
+    ] == "failed"
+    assert await _balance(client) == 1
 
 
 async def test_cannot_take_more_than_balance(client: AsyncClient, make_user) -> None:
     admin = await make_user(is_admin=True)
-    user = await make_user()
+    user = await make_user(balance=0)
     login(client, admin)
 
     await _grant(client, user.id, 3)
     assert (await _grant(client, user.id, -2)).status_code == 201
-    assert (await _grant(client, user.id, -5)).status_code == 409
+    response = await _grant(client, user.id, -5)
+    assert response.status_code == 409
+    assert "(1)" in response.json()["detail"]
     assert (await _grant(client, user.id, 0)).status_code == 422
 
     history = (await client.get(f"{ADMIN}/users/{user.id}/credits")).json()
     assert [item["amount"] for item in history["items"]] == [-2, 3]
+    assert {item["granted_by"]["email"] for item in history["items"]} == {admin.email}
 
 
 async def test_block_user_revokes_access(client: AsyncClient, make_user) -> None:
@@ -181,19 +179,13 @@ async def test_admin_cannot_block_self_or_admins(
         assert response.status_code == 409
 
 
-async def test_change_plan(client: AsyncClient, make_user) -> None:
+async def test_plan_field_is_gone(client: AsyncClient, make_user) -> None:
     admin = await make_user(is_admin=True)
     user = await make_user()
     login(client, admin)
 
     response = await client.patch(f"{ADMIN}/users/{user.id}", json={"plan": "pro"})
-    assert response.json()["plan"] == "pro"
-
-    detail = (await client.get(f"{ADMIN}/users/{user.id}")).json()
-    assert detail["quota"]["daily_limit"] == settings.generation.pro_daily_limit
-
-    bad = await client.patch(f"{ADMIN}/users/{user.id}", json={"plan": "vip"})
-    assert bad.status_code == 422
+    assert response.status_code == 422
 
 
 async def test_admin_sees_any_generation(client: AsyncClient, make_user) -> None:

@@ -7,17 +7,18 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from app.api.deps import CurrentAdmin, SessionDep
 from app.api.generations import IMAGE_RESPONSES, generation_image_response
 from app.core.config import settings
+from app.models.credit_grant import CreditGrant
 from app.models.generation_image import ImageRole
 from app.models.user import User
 from app.schemas.admin import (
     AdminStats,
-    AdminUserDetail,
     AdminUserList,
     AdminUserRead,
     AdminUserUpdate,
     CreditGrantCreate,
     CreditGrantList,
     CreditGrantRead,
+    GrantAuthor,
 )
 from app.schemas.generation import GenerationList, GenerationRead
 from app.services.admin import (
@@ -25,14 +26,13 @@ from app.services.admin import (
     get_admin_user,
     get_stats,
     list_users,
-    update_user,
+    set_blocked,
 )
-from app.services.credits import InsufficientBonusError, grant_credits, list_grants
-from app.services.generation_limits import get_quota
+from app.services.balance import InsufficientBalanceError
+from app.services.credits import grant_credits, list_grants
 from app.services.generations import (
     get_generation,
     list_user_generations,
-    quota_to_schema,
     to_read,
 )
 from app.services.users import get_user_by_id
@@ -50,6 +50,24 @@ async def _load_user(session: SessionDep, user_id: uuid.UUID) -> User:
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
     return user
+
+
+def _grant_read(
+    grant: CreditGrant, author_email: str | None, author_name: str | None
+) -> CreditGrantRead:
+    author = (
+        GrantAuthor(id=grant.granted_by_id, email=author_email, name=author_name)
+        if grant.granted_by_id is not None
+        else None
+    )
+    return CreditGrantRead(
+        id=grant.id,
+        kind=grant.kind,
+        amount=grant.amount,
+        reason=grant.reason,
+        granted_by=author,
+        created_at=grant.created_at,
+    )
 
 
 async def _user_read(session: SessionDep, user_id: uuid.UUID) -> AdminUserRead:
@@ -76,21 +94,17 @@ async def users(
     return AdminUserList(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/users/{user_id}", response_model=AdminUserDetail, summary="Пользователь")
+@router.get("/users/{user_id}", response_model=AdminUserRead, summary="Пользователь")
 async def user_detail(
     user_id: uuid.UUID, admin: CurrentAdmin, session: SessionDep
-) -> AdminUserDetail:
-    user = await _load_user(session, user_id)
-    quota = await get_quota(session, user.id, user.plan)
-    return AdminUserDetail(
-        user=await _user_read(session, user_id), quota=quota_to_schema(quota)
-    )
+) -> AdminUserRead:
+    return await _user_read(session, user_id)
 
 
 @router.patch(
     "/users/{user_id}",
     response_model=AdminUserRead,
-    summary="Сменить план или заблокировать",
+    summary="Заблокировать или разблокировать",
 )
 async def user_update(
     user_id: uuid.UUID,
@@ -100,9 +114,7 @@ async def user_update(
 ) -> AdminUserRead:
     user = await _load_user(session, user_id)
     try:
-        await update_user(
-            session, admin, user, plan=payload.plan, is_blocked=payload.is_blocked
-        )
+        await set_blocked(session, admin, user, is_blocked=payload.is_blocked)
     except AdminActionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
 
@@ -110,7 +122,7 @@ async def user_update(
         "Админ %s изменил пользователя %s: %s",
         admin.email,
         user_id,
-        payload.model_dump(exclude_none=True),
+        payload.model_dump(),
     )
     return await _user_read(session, user_id)
 
@@ -118,7 +130,7 @@ async def user_update(
 @router.get(
     "/users/{user_id}/credits",
     response_model=CreditGrantList,
-    summary="История бонусов",
+    summary="История баланса",
 )
 async def credits(
     user_id: uuid.UUID,
@@ -130,7 +142,9 @@ async def credits(
     await _load_user(session, user_id)
     rows, total = await list_grants(session, user_id, limit, offset)
     return CreditGrantList(
-        items=[CreditGrantRead.model_validate(row) for row in rows],
+        items=[
+            _grant_read(row.grant, row.author_email, row.author_name) for row in rows
+        ],
         total=total,
         limit=limit,
         offset=offset,
@@ -141,7 +155,7 @@ async def credits(
     "/users/{user_id}/credits",
     response_model=CreditGrantRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Выдать или списать бонусные генерации",
+    summary="Начислить или списать генерации",
 )
 async def credits_grant(
     user_id: uuid.UUID,
@@ -150,13 +164,16 @@ async def credits_grant(
     session: SessionDep,
 ) -> CreditGrantRead:
     await _load_user(session, user_id)
-    admin_id, admin_email = admin.id, admin.email
+    admin_id, admin_email, admin_name = admin.id, admin.email, admin.name
     try:
         grant = await grant_credits(
             session, user_id, payload.amount, payload.reason, admin_id
         )
-    except InsufficientBonusError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    except InsufficientBalanceError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Нельзя списать больше, чем на балансе ({exc.balance})",
+        ) from None
 
     logger.info(
         "Админ %s начислил %+d генераций пользователю %s (%s)",
@@ -165,7 +182,7 @@ async def credits_grant(
         user_id,
         payload.reason or "без причины",
     )
-    return CreditGrantRead.model_validate(grant)
+    return _grant_read(grant, admin_email, admin_name)
 
 
 @router.get(

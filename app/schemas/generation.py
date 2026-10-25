@@ -52,7 +52,6 @@ class GenerationRead(BaseModel):
     status: str
     params: GenerationParams
     input_roles: list[str]
-    used_bonus: bool
     error: str | None
     created_at: datetime
     started_at: datetime | None
@@ -74,12 +73,6 @@ class GenerationList(BaseModel):
     offset: int
 
 
-class GenerationQuota(BaseModel):
-    plan: str
-    daily_limit: int
-    daily_used: int
-    daily_remaining: int
-    bonus_remaining: int
-    remaining: int
-    window_hours: int
-    resets_at: datetime | None
+class InsufficientBalanceDetail(BaseModel):
+    message: str
+    balance: int

@@ -108,7 +108,7 @@ async def test_preview_failure_does_not_fail_generation(
 async def test_filter_by_status(
     client: AsyncClient, make_user, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    login(client, await make_user(plan="pro"))
+    login(client, await make_user())
     done = await _create(client)
     monkeypatch.setattr(generations_api, "get_image_generator", RefusingGenerator)
     failed = await _create(client)
@@ -148,15 +148,13 @@ async def test_delete_generation(
         assert not (storage._root / key).exists()
 
 
-async def test_delete_does_not_refund_quota(client: AsyncClient, make_user) -> None:
-    login(client, await make_user())
+async def test_delete_does_not_refund_balance(client: AsyncClient, make_user) -> None:
+    login(client, await make_user(balance=3))
     created = await _create(client)
-    before = (await client.get(f"{URL}/quota")).json()
 
     await client.delete(f"{URL}/{created['id']}")
 
-    after = (await client.get(f"{URL}/quota")).json()
-    assert after["daily_used"] == before["daily_used"] == 1
+    assert (await client.get("/api/users/me")).json()["balance"] == 2
 
 
 async def test_cannot_delete_running_generation(client: AsyncClient, make_user) -> None:
@@ -236,7 +234,7 @@ async def test_cleanup_purges_only_old_failed_generations(
     storage: LocalStorage,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    login(client, await make_user(plan="pro"))
+    login(client, await make_user())
     done = await _create(client)
     monkeypatch.setattr(generations_api, "get_image_generator", RefusingGenerator)
     old_failed = await _create(client)

@@ -35,9 +35,10 @@ class Generation(Base):
     )
     params: Mapped[dict] = mapped_column(JSONB, default=dict)
     model: Mapped[str | None] = mapped_column(String(100))
-    used_bonus: Mapped[bool] = mapped_column(
+    charged: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
+    """Генерация списала единицу с баланса. Неудачная (failed) не считается."""
 
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

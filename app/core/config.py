@@ -50,9 +50,8 @@ class GeminiConfig(BaseModel):
 class GenerationConfig(BaseModel):
     backend: Literal["gemini", "fake"] = "gemini"
     fake_delay_seconds: float = 2.0
-    free_daily_limit: int = Field(default=3, ge=0)
-    pro_daily_limit: int = Field(default=50, ge=0)
-    limit_window_hours: int = Field(default=24, ge=1)
+    welcome_credits: int = Field(default=1, ge=0)
+    """Сколько генераций подарить при регистрации."""
     max_upload_bytes: int = Field(default=15 * 1024 * 1024, gt=0)
     max_image_side: int = Field(default=2048, ge=256)
     max_image_pixels: int = Field(default=50_000_000, gt=0)

@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 
@@ -8,11 +7,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class UserPlan(enum.StrEnum):
-    FREE = "free"
-    PRO = "pro"
-
-
 class User(Base):
     __tablename__ = "users"
 
@@ -20,9 +14,6 @@ class User(Base):
     google_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str | None] = mapped_column(String(255))
-    plan: Mapped[str] = mapped_column(
-        String(20), default=UserPlan.FREE.value, server_default=UserPlan.FREE.value
-    )
     is_admin: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )

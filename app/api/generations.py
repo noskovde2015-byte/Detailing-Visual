@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import (
@@ -28,11 +27,11 @@ from app.models.generation_image import ImageRole
 from app.schemas.generation import (
     GenerationList,
     GenerationParams,
-    GenerationQuota,
     GenerationRead,
+    InsufficientBalanceDetail,
 )
+from app.services.balance import INSUFFICIENT_BALANCE_MESSAGE, InsufficientBalanceError
 from app.services.cleanup import purge_generation_files
-from app.services.generation_limits import GenerationLimitExceededError, get_quota
 from app.services.generation_queue import (
     BackgroundGenerationQueue,
     GenerationQueue,
@@ -52,7 +51,6 @@ from app.services.generations import (
     create_generation,
     get_user_generation,
     list_user_generations,
-    quota_to_schema,
     soft_delete_generation,
     to_read,
 )
@@ -146,6 +144,14 @@ QueueDep = Annotated[GenerationQueue, Depends(get_generation_queue)]
     response_model=GenerationRead,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Создать генерацию",
+    responses={
+        402: {
+            "description": "На балансе нет генераций. detail: "
+            '{"message": "...", "balance": 0}',
+        },
+        413: {"description": "Файл больше допустимого размера"},
+        503: {"description": "Очередь недоступна, генерация вернулась на баланс"},
+    },
 )
 async def create(
     user: CurrentUser,
@@ -197,28 +203,20 @@ async def create(
             processed,
             model_name=configured_model_name(),
         )
-    except GenerationLimitExceededError as exc:
-        headers = {}
-        if exc.quota.resets_at is not None:
-            seconds = max(
-                int((exc.quota.resets_at - datetime.now(UTC)).total_seconds()), 1
-            )
-            headers["Retry-After"] = str(seconds)
+    except InsufficientBalanceError as exc:
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "message": "Лимит генераций исчерпан",
-                "quota": quota_to_schema(exc.quota).model_dump(mode="json"),
-            },
-            headers=headers,
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=InsufficientBalanceDetail(
+                message=INSUFFICIENT_BALANCE_MESSAGE, balance=exc.balance
+            ).model_dump(),
         ) from None
 
     try:
         await queue.enqueue(generation.id)
     except QueueUnavailableError:
         logger.exception("Не удалось поставить генерацию %s в очередь", generation.id)
-        # Генерация уже сохранена и заняла лимит. Помечаем её неудачной,
-        # чтобы лимит вернулся, а не висел pending до уборщика.
+        # Генерация уже сохранена и заняла единицу баланса. Помечаем её неудачной,
+        # чтобы единица вернулась, а не висела pending до уборщика.
         await mark_failed(
             db_helper.session_factory, generation.id, QUEUE_UNAVAILABLE_ERROR
         )
@@ -253,11 +251,6 @@ async def list_generations(
     )
 
 
-@router.get("/quota", response_model=GenerationQuota, summary="Оставшийся лимит")
-async def quota(user: CurrentUser, session: SessionDep) -> GenerationQuota:
-    return quota_to_schema(await get_quota(session, user.id, user.plan))
-
-
 @router.get("/{generation_id}", response_model=GenerationRead, summary="Статус")
 async def read(
     generation_id: uuid.UUID, user: CurrentUser, session: SessionDep
@@ -277,7 +270,7 @@ async def read(
 async def delete_generation(
     generation_id: uuid.UUID, user: CurrentUser, session: SessionDep
 ) -> None:
-    """Удаляет генерацию вместе с фото. Потраченный лимит не возвращается."""
+    """Удаляет генерацию вместе с фото. Потраченная генерация на баланс не возвращается."""
     generation = await get_user_generation(session, user.id, generation_id)
     if generation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Генерация не найдена")

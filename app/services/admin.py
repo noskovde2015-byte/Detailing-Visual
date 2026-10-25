@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.credit_grant import CreditGrant
 from app.models.generation import Generation, GenerationStatus
-from app.models.user import User, UserPlan
+from app.models.user import User
 from app.schemas.admin import AdminStats, AdminUserRead
 from app.services.auth_sessions import revoke_all_user_sessions
+from app.services.balance import balance_of
 
 SEARCH_MAX_LENGTH = 100
 
@@ -26,45 +26,24 @@ def _generations_total():
     )
 
 
-def _bonus_remaining():
-    granted = (
-        select(func.coalesce(func.sum(CreditGrant.amount), 0))
-        .where(CreditGrant.user_id == User.id)
-        .correlate(User)
-        .scalar_subquery()
-    )
-    spent = (
-        select(func.count())
-        .where(
-            Generation.user_id == User.id,
-            Generation.used_bonus.is_(True),
-            Generation.status != GenerationStatus.FAILED.value,
-        )
-        .correlate(User)
-        .scalar_subquery()
-    )
-    return func.greatest(granted - spent, 0)
-
-
 def _users_query():
     return select(
         User,
         _generations_total().label("generations_total"),
-        _bonus_remaining().label("bonus_remaining"),
+        balance_of(User.id).label("balance"),
     )
 
 
-def _to_read(user: User, generations_total: int, bonus_remaining: int) -> AdminUserRead:
+def _to_read(user: User, generations_total: int, balance: int) -> AdminUserRead:
     return AdminUserRead(
         id=user.id,
         email=user.email,
         name=user.name,
-        plan=user.plan,
         is_admin=user.is_admin,
         is_blocked=user.is_blocked,
         created_at=user.created_at,
         generations_total=generations_total,
-        bonus_remaining=bonus_remaining,
+        balance=balance,
     )
 
 
@@ -105,23 +84,15 @@ async def get_admin_user(
     return _to_read(*row) if row else None
 
 
-async def update_user(
-    session: AsyncSession,
-    admin: User,
-    user: User,
-    *,
-    plan: UserPlan | None,
-    is_blocked: bool | None,
+async def set_blocked(
+    session: AsyncSession, admin: User, user: User, *, is_blocked: bool
 ) -> None:
     if is_blocked and user.id == admin.id:
         raise AdminActionError("Нельзя заблокировать самого себя")
     if is_blocked and user.is_admin:
         raise AdminActionError("Нельзя заблокировать администратора")
 
-    if plan is not None:
-        user.plan = plan.value
-    if is_blocked is not None:
-        user.is_blocked = is_blocked
+    user.is_blocked = is_blocked
     await session.commit()
 
     if is_blocked:
@@ -141,14 +112,11 @@ async def get_stats(session: AsyncSession) -> AdminStats:
         )
     ).one()
 
-    generations_total, generations_recent, bonus_recent = (
+    generations_total, generations_recent = (
         await session.execute(
             select(
                 func.count(),
                 func.count().filter(Generation.created_at > since),
-                func.count().filter(
-                    Generation.created_at > since, Generation.used_bonus.is_(True)
-                ),
             ).select_from(Generation)
         )
     ).one()
@@ -172,5 +140,4 @@ async def get_stats(session: AsyncSession) -> AdminStats:
         generations_24h_by_status={
             status.value: by_status.get(status.value, 0) for status in GenerationStatus
         },
-        bonus_generations_24h=bonus_recent,
     )

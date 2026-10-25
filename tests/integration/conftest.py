@@ -25,6 +25,7 @@ from app.core.security import create_access_token
 from app.db.base import Base
 from app.db.db_helper import db_helper
 from app.main import app
+from app.models.credit_grant import CreditGrant
 from app.models.user import User
 from app.services.storage import LocalStorage
 
@@ -55,16 +56,20 @@ def storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LocalStorage:
 
 @pytest.fixture
 async def make_user(db: None) -> Callable[..., object]:
-    async def _make(plan: str = "free", is_admin: bool = False) -> User:
+    async def _make(is_admin: bool = False, balance: int = 10) -> User:
+        """Пользователь с заданным балансом (начисление от «администратора»)."""
         async with db_helper.session_factory() as session:
             user = User(
+                id=uuid.uuid4(),
                 google_sub=uuid.uuid4().hex,
                 email=f"{uuid.uuid4().hex}@example.com",
                 name="Test",
-                plan=plan,
                 is_admin=is_admin,
             )
             session.add(user)
+            if balance:
+                await session.flush()
+                session.add(CreditGrant(user_id=user.id, amount=balance, reason="test"))
             await session.commit()
             return user
 

@@ -3,8 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.user import UserPlan
-from app.schemas.generation import GenerationQuota
+from app.models.credit_grant import CreditGrantKind
 
 CREDIT_GRANT_MAX = 1000
 
@@ -13,12 +12,11 @@ class AdminUserRead(BaseModel):
     id: uuid.UUID
     email: str
     name: str | None
-    plan: str
     is_admin: bool
     is_blocked: bool
     created_at: datetime
     generations_total: int
-    bonus_remaining: int
+    balance: int
 
 
 class AdminUserList(BaseModel):
@@ -28,16 +26,10 @@ class AdminUserList(BaseModel):
     offset: int
 
 
-class AdminUserDetail(BaseModel):
-    user: AdminUserRead
-    quota: GenerationQuota
-
-
 class AdminUserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    plan: UserPlan | None = None
-    is_blocked: bool | None = None
+    is_blocked: bool
 
 
 class CreditGrantCreate(BaseModel):
@@ -58,13 +50,21 @@ class CreditGrantCreate(BaseModel):
         return value
 
 
-class CreditGrantRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class GrantAuthor(BaseModel):
     id: uuid.UUID
+    email: str | None
+    name: str | None
+
+
+class CreditGrantRead(BaseModel):
+    id: uuid.UUID
+    kind: CreditGrantKind
     amount: int
     reason: str | None
-    granted_by_id: uuid.UUID | None
+    granted_by: GrantAuthor | None = Field(
+        description="Кто начислил. null — система (подарок, покупка) "
+        "или удалённый администратор"
+    )
     created_at: datetime
 
 
@@ -82,4 +82,3 @@ class AdminStats(BaseModel):
     generations_total: int
     generations_24h: int
     generations_24h_by_status: dict[str, int]
-    bonus_generations_24h: int
