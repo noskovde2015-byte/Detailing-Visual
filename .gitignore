@@ -220,3 +220,6 @@ __marimo__/
 /*.jpeg
 /*.png
 /*.webp
+
+# Шаблонное lib/ выше — для Python-сборок; папку фронта не игнорируем.
+!frontend/src/lib/

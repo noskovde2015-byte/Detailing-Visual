@@ -16,6 +16,7 @@ permissions:
 env:
   PYTHON_VERSION: "3.13"
   POETRY_VERSION: "2.5.1"
+  NODE_VERSION: "22"
 
 jobs:
   lint:
@@ -131,3 +132,76 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # npm ci ставит строго по package-lock.json и падает, если он устарел.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Vitest
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  contract:
+    name: API contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_CONFIG__DB__URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      APP_CONFIG__GOOGLE__CLIENT_ID: ci
+      APP_CONFIG__GOOGLE__CLIENT_SECRET: ci
+      APP_CONFIG__AUTH__SECRET_KEY: ci-secret-key-not-for-production-use
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Poetry
+        run: pipx install "poetry==${POETRY_VERSION}"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: poetry
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          poetry install --no-interaction --no-root
+          npm ci --prefix frontend
+
+      # Схема и TS-типы в репозитории должны совпадать с текущим API.
+      # Упало — выполните локально две команды ниже и закоммитьте результат.
+      - name: Regenerate OpenAPI schema and types
+        run: |
+          poetry run python -m scripts.export_openapi
+          npm run gen:api --prefix frontend
+
+      - name: Check for drift
+        run: git diff --exit-code -- frontend/openapi.json frontend/src/api/schema.d.ts
