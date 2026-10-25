@@ -14,6 +14,7 @@ from app.core.logging import setup_logging
 from app.db.db_helper import db_helper
 from app.services.generation_queue import ArqGenerationQueue
 from app.services.generation_runner import fail_stale_generations
+from app.services.storage import get_storage
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if queue is not None:
             await queue.close()
+        await get_storage().close()
         await db_helper.dispose()
 
 

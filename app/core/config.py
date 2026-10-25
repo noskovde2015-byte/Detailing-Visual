@@ -91,9 +91,46 @@ class QueueConfig(BaseModel):
         return self
 
 
+class S3Config(BaseModel):
+    """Любое S3-совместимое хранилище: Yandex Object Storage, Selectel, VK Cloud,
+    Timeweb, MinIO, AWS. Отличаются только endpoint_url и region."""
+
+    endpoint_url: str | None = None
+    region: str = "us-east-1"
+    bucket: str | None = None
+    access_key_id: SecretStr | None = None
+    secret_access_key: SecretStr | None = None
+    addressing_style: Literal["auto", "virtual", "path"] = "auto"
+    key_prefix: str = ""
+    """Общий префикс ключей, чтобы в одном бакете жили разные окружения (prod/, stage/)."""
+    presigned_url_ttl_seconds: int = Field(default=300, ge=30, le=7 * 24 * 3600)
+    connect_timeout_seconds: float = 5.0
+    read_timeout_seconds: float = 30.0
+    max_attempts: int = Field(default=5, ge=1)
+    max_pool_connections: int = Field(default=20, ge=1)
+
+
 class StorageConfig(BaseModel):
-    backend: Literal["local"] = "local"
+    backend: Literal["local", "s3"] = "local"
     local_path: Path = BASE_DIR / "storage"
+    s3: S3Config = S3Config()
+
+    @model_validator(mode="after")
+    def _check_s3(self) -> Self:
+        if self.backend == "s3":
+            missing = [
+                name
+                for name in ("bucket", "access_key_id", "secret_access_key")
+                if getattr(self.s3, name) is None
+            ]
+            if missing:
+                raise ValueError(
+                    "Для storage.backend=s3 не заданы: "
+                    + ", ".join(
+                        f"APP_CONFIG__STORAGE__S3__{n.upper()}" for n in missing
+                    )
+                )
+        return self
 
 
 class GoogleOAuthConfig(BaseModel):
@@ -121,7 +158,8 @@ class Settings(BaseSettings):
         case_sensitive=False,
         env_prefix="APP_CONFIG__",
         env_nested_delimiter="__",
-
+        # .env общий с Docker Compose: там есть POSTGRES_* и другие переменные
+        # без нашего префикса, их нужно пропускать, а не падать.
         extra="ignore",
     )
 

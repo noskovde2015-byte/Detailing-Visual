@@ -1,25 +1,16 @@
 name: detailing
 
-# Общие настройки для образа приложения: из него запускаются migrate, api и worker.
-# Собирает образ только migrate (секция build ниже). Если дать build всем трём,
-# Docker соберёт один и тот же образ трижды параллельно, и сборки подерутся за имя.
 x-app: &app
   image: detailing-backend:local
-  # Образ локальный, в Docker Hub его нет: никогда не пытаться его скачать.
   pull_policy: never
   init: true
   env_file: .env
   environment:
-    # Адреса сервисов внутри сети compose. Перекрывают значения из .env,
-    # где для локального запуска без Docker стоит localhost.
     APP_CONFIG__DB__URL: postgresql+asyncpg://${POSTGRES_USER:-detailing}:${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}@postgres:5432/${POSTGRES_DB:-detailing}
     APP_CONFIG__REDIS__URL: redis://redis:6379/0
     APP_CONFIG__QUEUE__BACKEND: arq
-    APP_CONFIG__STORAGE__BACKEND: local
     APP_CONFIG__STORAGE__LOCAL_PATH: /app/storage
   volumes:
-    # Общая папка с фото: API сохраняет входные файлы, воркер читает их и пишет
-    # результат. Нужна, пока файлы не переехали в S3.
     - storage:/app/storage
 
 services:
@@ -41,7 +32,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # AOF: очередь переживает перезапуск Redis, задачи не теряются.
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     volumes:
       - redis-data:/data
@@ -51,12 +41,9 @@ services:
       timeout: 3s
       retries: 10
 
-  # Применяет миграции и завершается. api и worker стартуют только после успеха,
-  # поэтому код никогда не работает со старой схемой базы.
   migrate:
     <<: *app
     build: .
-    # Пересобирать при каждом `up` (из кеша это секунды): в контейнерах всегда свежий код.
     pull_policy: build
     command: ["alembic", "upgrade", "head"]
     restart: "no"
@@ -69,7 +56,6 @@ services:
     <<: *app
     restart: unless-stopped
     ports:
-      # Только localhost: снаружи API будет доступен через Nginx на этапе деплоя.
       - "127.0.0.1:${API_PORT:-8001}:8000"
     depends_on:
       migrate:
@@ -77,11 +63,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
       interval: 15s
       timeout: 5s
       start_period: 10s

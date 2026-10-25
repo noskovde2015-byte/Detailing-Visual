@@ -17,6 +17,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 
 from app.api.deps import CurrentUser, SessionDep
@@ -57,13 +58,25 @@ from app.services.image_generator import (
     get_image_generator,
 )
 from app.services.images import InvalidImageError, ProcessedImage, process_upload
-from app.services.storage import StorageFileNotFoundError, get_storage
+from app.services.storage import (
+    IMMUTABLE_CACHE_CONTROL,
+    StorageFileNotFoundError,
+    get_storage,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix=settings.prefix.generations_prefix, tags=["generations"])
 
 READ_CHUNK_SIZE = 1024 * 1024
+
+IMAGE_RESPONSES: dict[int | str, dict] = {
+    200: {
+        "description": "Файл изображения (локальное хранилище)",
+        "content": {"image/png": {}, "image/jpeg": {}, "image/webp": {}},
+    },
+    307: {"description": "Редирект на временную ссылку в S3"},
+}
 
 
 async def _read_limited(upload: UploadFile, field: str) -> bytes:
@@ -249,7 +262,7 @@ async def read(
 @router.get(
     "/{generation_id}/images/{role}",
     response_class=Response,
-    responses={200: {"content": {"image/png": {}, "image/jpeg": {}}}},
+    responses=IMAGE_RESPONSES,
     summary="Изображение генерации (вход или результат)",
 )
 async def image(
@@ -268,25 +281,45 @@ async def image(
 async def generation_image_response(
     generation: Generation, role: ImageRole, *, download: bool
 ) -> Response:
+    """Отдаёт картинку генерации. Права доступа проверяет вызывающий.
+
+    Если хранилище умеет выдавать временные ссылки (S3), отвечаем редиректом:
+    файл скачивается напрямую из хранилища и не проходит через API.
+    """
     stored = next((img for img in generation.images if img.role == role), None)
     if stored is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Изображение не найдено")
 
+    extension = stored.storage_key.rsplit(".", 1)[-1]
+    disposition = "attachment" if download else "inline"
+    filename = f"detailing-{generation.id}-{role.value}.{extension}"
+    content_disposition = f'{disposition}; filename="{filename}"'
+
+    storage = get_storage()
+    url = await storage.download_url(
+        stored.storage_key,
+        content_type=stored.content_type,
+        content_disposition=content_disposition,
+    )
+    if url is not None:
+        return RedirectResponse(
+            url,
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Cache-Control": "no-store"},
+        )
+
     try:
-        data = await get_storage().read(stored.storage_key)
+        data = await storage.read(stored.storage_key)
     except StorageFileNotFoundError:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, detail="Изображение не найдено"
         ) from None
 
-    extension = stored.storage_key.rsplit(".", 1)[-1]
-    disposition = "attachment" if download else "inline"
-    filename = f"detailing-{generation.id}-{role.value}.{extension}"
     return Response(
         content=data,
         media_type=stored.content_type,
         headers={
-            "Content-Disposition": f'{disposition}; filename="{filename}"',
-            "Cache-Control": "private, max-age=86400, immutable",
+            "Content-Disposition": content_disposition,
+            "Cache-Control": IMMUTABLE_CACHE_CONTROL,
         },
     )

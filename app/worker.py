@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 
 queue_config = settings.queue
 
-# Запас сверх нашего таймаута: arq должен снимать задачу только если
-# собственный таймаут генерации почему-то не сработал.
 ARQ_TIMEOUT_MARGIN_SECONDS = 30
 
 Ctx = dict[str, Any]
@@ -48,6 +46,7 @@ async def startup(ctx: Ctx) -> None:
 
 
 async def shutdown(ctx: Ctx) -> None:
+    await ctx["storage"].close()
     await db_helper.dispose()
 
 
@@ -100,7 +99,5 @@ class WorkerSettings:
     redis_settings = redis_settings()
     queue_name = queue_config.name
     max_jobs = queue_config.max_concurrent_generations
-    # Дать идущим генерациям закончиться при остановке (деплой), а не обрывать их.
     job_completion_wait = queue_config.job_timeout_seconds
-
     health_check_interval = 30

@@ -15,6 +15,7 @@ from app.services.image_generator import (
     ImageData,
     ImageGenerator,
 )
+from app.services.storage import S3Storage
 from tests.integration.conftest import image_file, login
 
 pytestmark = pytest.mark.anyio
@@ -233,3 +234,27 @@ async def test_queue_unavailable_returns_503_and_refunds(
     history = (await client.get(URL)).json()
     assert history["items"][0]["status"] == "failed"
     assert (await client.get(f"{URL}/quota")).json()["daily_used"] == 0
+
+
+async def test_full_flow_with_s3_storage(
+    client: AsyncClient,
+    make_user,
+    s3_storage: S3Storage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(generations_api, "get_storage", lambda: s3_storage)
+    login(client, await make_user())
+
+    created = (await _create(client)).json()
+    body = (await client.get(f"{URL}/{created['id']}")).json()
+    assert body["status"] == "done", body
+
+    redirect = await client.get(body["result_url"], params={"download": True})
+    assert redirect.status_code == 307
+    assert redirect.headers["cache-control"] == "no-store"
+
+    async with AsyncClient() as s3_client:
+        image = await s3_client.get(redirect.headers["location"])
+    assert image.status_code == 200
+    assert image.content.startswith(b"\x89PNG")
+    assert image.headers["content-disposition"].startswith("attachment")

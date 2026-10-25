@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import CurrentAdmin, SessionDep
-from app.api.generations import generation_image_response
+from app.api.generations import IMAGE_RESPONSES, generation_image_response
 from app.core.config import settings
 from app.models.generation_image import ImageRole
 from app.models.user import User
@@ -207,7 +207,7 @@ async def generation_detail(
 @router.get(
     f"{settings.prefix.generations_prefix}/{{generation_id}}/images/{{role}}",
     response_class=Response,
-    responses={200: {"content": {"image/png": {}, "image/jpeg": {}}}},
+    responses=IMAGE_RESPONSES,
     summary="Изображение любой генерации",
 )
 async def generation_image(

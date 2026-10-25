@@ -1,5 +1,8 @@
 import os
 
+# Фикстуры тестового S3 (moto) доступны во всех тестах.
+pytest_plugins = ["tests.s3_server"]
+
 _test_db_url = os.environ.get("TEST_DATABASE_URL")
 if _test_db_url:
     os.environ["APP_CONFIG__DB__URL"] = _test_db_url
