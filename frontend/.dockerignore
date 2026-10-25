@@ -1,0 +1,11 @@
+# В образ попадают только исходники: зависимости ставятся внутри (npm ci),
+# сборка тоже делается внутри.
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.local
+Dockerfile
+.dockerignore

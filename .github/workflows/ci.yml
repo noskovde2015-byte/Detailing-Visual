@@ -125,8 +125,16 @@ jobs:
           context: .
           push: false
           tags: detailing-backend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: frontend
+          push: false
+          tags: detailing-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
       - name: Validate compose file
         run: |
