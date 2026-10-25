@@ -28,6 +28,8 @@ from app.worker import WorkerSettings
 from tests.integration.conftest import image_file, login
 
 TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL")
+if not TEST_REDIS_URL and os.environ.get("CI"):
+    raise RuntimeError("В CI обязателен TEST_REDIS_URL")
 
 pytestmark = [
     pytest.mark.anyio,

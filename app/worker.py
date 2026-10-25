@@ -92,8 +92,6 @@ class WorkerSettings:
         func(
             process_generation,
             name=PROCESS_GENERATION_JOB,
-            # +1: попытка, которую arq делает после отмены при остановке воркера,
-            # не должна съедать попытку повтора после сбоя Google.
             max_tries=queue_config.max_tries + 1,
             timeout=queue_config.job_timeout_seconds + ARQ_TIMEOUT_MARGIN_SECONDS,
             keep_result=timedelta(hours=1),
@@ -106,7 +104,6 @@ class WorkerSettings:
             run_at_startup=True,
             unique=True,
         ),
-        # Раз в час, не в 00 минут: в ровный час обычно и так пик задач.
         cron(cleanup_storage_files, minute={17}, unique=True),
     )
     on_startup = startup
@@ -114,8 +111,5 @@ class WorkerSettings:
     redis_settings = redis_settings()
     queue_name = queue_config.name
     max_jobs = queue_config.max_concurrent_generations
-    # Дать идущим генерациям закончиться при остановке (деплой), а не обрывать их.
     job_completion_wait = queue_config.job_timeout_seconds
-    # Как часто воркер отмечается в Redis. По этой отметке работает
-    # `arq --check` (healthcheck в Docker). По умолчанию в arq это раз в час.
     health_check_interval = 30

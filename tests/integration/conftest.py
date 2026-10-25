@@ -10,6 +10,10 @@ from PIL import Image
 from sqlalchemy import text
 
 if not os.environ.get("TEST_DATABASE_URL"):
+    # Локально без базы интеграционные тесты пропускаются, а в CI это ошибка:
+    # иначе опечатка в имени переменной тихо отключит половину тестов.
+    if os.environ.get("CI"):
+        raise RuntimeError("В CI обязателен TEST_DATABASE_URL")
     pytest.skip(
         "Интеграционные тесты пропущены: не задан TEST_DATABASE_URL",
         allow_module_level=True,

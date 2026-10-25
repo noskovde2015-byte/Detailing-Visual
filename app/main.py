@@ -29,8 +29,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         queue = await ArqGenerationQueue.connect()
         app.state.generation_queue = queue
     else:
-        # В режиме background генерации выполнялись внутри этого процесса
-        # и оборвались вместе с ним, поэтому всё незавершённое — зависшее.
         logger.warning("Очередь генераций: background (только для разработки)")
         await fail_stale_generations(
             db_helper.session_factory,
