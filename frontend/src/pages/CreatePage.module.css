@@ -48,7 +48,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #eef0f3;
+  background: var(--placeholder);
 }
 
 .replace {
@@ -131,7 +131,7 @@
   align-items: flex-start;
   padding: 14px;
   background: var(--surface);
-  border: 1px solid #ecedf0;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   font-size: 13px;
   line-height: 1.4;
@@ -204,7 +204,7 @@
   height: 1px;
   margin: 0;
   border: none;
-  background: #ecedf0;
+  background: var(--line);
 }
 
 .fullTabs {
@@ -277,12 +277,12 @@
   min-height: 30px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(14, 15, 20, 0.12);
+  border: 1px solid var(--swatch-line);
 }
 
 .swatch[aria-checked="true"] {
   box-shadow:
-    0 0 0 2px #fff,
+    0 0 0 2px var(--surface),
     0 0 0 4px var(--accent);
 }
 
@@ -345,7 +345,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid rgba(14, 15, 20, 0.12);
+  border: 1px solid var(--swatch-line);
 }
 
 .finishes {

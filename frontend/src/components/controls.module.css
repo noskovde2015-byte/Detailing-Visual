@@ -32,12 +32,12 @@
   padding: 0;
   border: none;
   border-radius: 999px;
-  background: #d9dae0;
+  background: var(--switch-off);
   transition: background 0.15s ease;
 }
 
 .switchOn {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .knob {
@@ -80,7 +80,7 @@
 
 .selectOpen {
   border: 1.5px solid var(--accent);
-  box-shadow: 0 0 0 4px rgba(29, 34, 102, 0.1);
+  box-shadow: 0 0 0 4px var(--accent-ring);
 }
 
 .chevron {
@@ -124,8 +124,8 @@
 
 .optionSelected,
 .optionSelected:hover {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 /* ---------- загрузка ---------- */

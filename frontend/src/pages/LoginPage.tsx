@@ -29,7 +29,7 @@ export function LoginPage() {
   return (
     <main className={styles.page}>
       <div className={`card ${styles.card}`}>
-        <img src={logo} alt="Detailing.Visual" className={styles.logo} width={204} height={40} />
+        <img src={logo} alt="Detailing.Visual" className={`logo-img ${styles.logo}`} width={204} height={40} />
         <h1 className={styles.title}>Ваша машина в новом цвете — до оклейки</h1>
         <p className={styles.lead}>
           Загрузите фото автомобиля, выберите плёнку, антихром, тонировку и диски — и посмотрите

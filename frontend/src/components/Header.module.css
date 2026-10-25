@@ -15,10 +15,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px 24px;
-  background: rgba(255, 255, 255, 0.84);
+  background: var(--header-bg);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(14, 15, 20, 0.06);
+  border: 1px solid var(--header-line);
   border-radius: 32px;
   box-shadow: var(--shadow-float);
 }
@@ -59,14 +59,14 @@
 
 .active,
 .active:hover {
-  background: var(--ink);
-  color: #fff;
+  background: var(--inverse);
+  color: var(--on-inverse);
 }
 
 .right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .balance {
@@ -103,8 +103,26 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.themeToggle {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.themeToggle:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .avatar {
@@ -114,8 +132,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;

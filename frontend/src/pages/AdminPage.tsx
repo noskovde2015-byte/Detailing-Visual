@@ -112,7 +112,7 @@ function Stats() {
         <span className={styles.statLabel}>Генерации за сутки</span>
         <span className={styles.statValue}>{data ? total24 : "—"}</span>
         <div className={styles.bar} aria-hidden="true">
-          <span style={{ flex: done || 0.0001, background: "var(--accent)" }} />
+          <span style={{ flex: done || 0.0001, background: "var(--accent-fill)" }} />
           <span style={{ flex: active, background: "#8e93c9" }} />
           <span style={{ flex: failed, background: "#d2453a" }} />
         </div>

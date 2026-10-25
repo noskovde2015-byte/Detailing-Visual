@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { lockScroll } from "../lib/smoothScroll";
 import { CloseIcon } from "./icons";
 import styles from "./Modal.module.css";
 
@@ -25,6 +26,9 @@ export function Modal({ open, onClose, labelledBy, size = "md", children }: Moda
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  // Пока окно открыто, страница под ним не прокручивается.
+  useEffect(() => (open ? lockScroll() : undefined), [open]);
 
   return (
     <dialog

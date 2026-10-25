@@ -3,6 +3,8 @@
   --surface: #ffffff;
   --surface-muted: #f7f7f9;
   --surface-sunken: #f0f1f5;
+  /* Фон под картинкой, пока она грузится или если её нет. */
+  --placeholder: #eef0f3;
   --ink: #0e0f14;
   --ink-2: #3c3f48;
   --muted: #5b5f6b;
@@ -10,13 +12,42 @@
   --line: #e6e7ea;
   --line-strong: #dadce1;
   --dash: #c9cbd2;
+
+  /*
+   * Акцент в двух ролях. --accent — текст, иконки и рамки на обычном фоне.
+   * --accent-fill — заливка под белым текстом (кнопки, аватар). В светлой
+   * теме это один цвет, в тёмной — разные: тёмно-синий текст на тёмном фоне
+   * не прочитать, а светлая заливка не держит белый текст.
+   */
   --accent: #1d2266;
+  --accent-fill: #1d2266;
+  --accent-fill-hover: #161a52;
+  --on-accent: #ffffff;
   --accent-soft: #eef0fa;
+  --accent-ring: rgba(29, 34, 102, 0.1);
+
+  /* «Инверсия»: тёмные плашки (активный пункт меню, тёмная карточка). */
+  --inverse: #0e0f14;
+  --on-inverse: #ffffff;
+  /* Выделенная карточка (пакеты в профиле). */
+  --feature-bg: #0e0f14;
+  --feature-text: #ffffff;
+  --feature-muted: #b4b7c0;
+
   --success: #1e6b3a;
   --success-soft: #e7f3ec;
   --danger: #a3261a;
   --danger-soft: #fbecea;
   --danger-line: #e8b4ae;
+
+  /* Выбранный сегмент переключателя: должен быть светлее дорожки. */
+  --segment-active: #ffffff;
+  --switch-off: #d9dae0;
+  --swatch-line: rgba(14, 15, 20, 0.12);
+  --header-bg: rgba(255, 255, 255, 0.84);
+  --header-line: rgba(14, 15, 20, 0.06);
+  /* Логотип — PNG тёмно-синего цвета; в тёмной теме его перекрашивает фильтр. */
+  --logo-filter: none;
 
   --radius-sm: 10px;
   --radius: 14px;
@@ -24,9 +55,63 @@
   --radius-xl: 24px;
   --shadow-float: 0 10px 30px rgba(14, 15, 20, 0.08), 0 1px 2px rgba(14, 15, 20, 0.04);
   --shadow-pop: 0 18px 40px rgba(14, 15, 20, 0.14), 0 2px 6px rgba(14, 15, 20, 0.06);
+  --shadow-soft: 0 1px 2px rgba(14, 15, 20, 0.08);
 
   --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
+}
+
+/*
+ * Тёмная тема. Не инверсия светлой: фон почти чёрный с лёгкой синевой,
+ * поверхности светлее фона (глубину в темноте показывает яркость, а не тени),
+ * текст не чисто белый — так меньше слепит.
+ */
+:root[data-theme="dark"] {
+  --bg: #0b0c10;
+  --surface: #16171c;
+  --surface-muted: #1c1d23;
+  --surface-sunken: #23252c;
+  --placeholder: #1f2127;
+  --ink: #f2f3f5;
+  --ink-2: #cdd0d6;
+  --muted: #9da1ac;
+  --subtle: #8a8f9b;
+  --line: #2a2c33;
+  --line-strong: #383b44;
+  --dash: #4b4e58;
+
+  --accent: #aab0ff;
+  --accent-fill: #4a52cc;
+  --accent-fill-hover: #5961dd;
+  --on-accent: #ffffff;
+  --accent-soft: #23264a;
+  --accent-ring: rgba(170, 176, 255, 0.22);
+
+  --inverse: #f2f3f5;
+  --on-inverse: #0e0f14;
+  --feature-bg: #1f2358;
+  --feature-text: #ffffff;
+  --feature-muted: #b9bde8;
+
+  --success: #6fd394;
+  --success-soft: #15301f;
+  --danger: #ff8a7d;
+  --danger-soft: #3a1a17;
+  --danger-line: #6b2d27;
+
+  --segment-active: #3a3d47;
+  --switch-off: #3a3d46;
+  --swatch-line: rgba(255, 255, 255, 0.16);
+  --header-bg: rgba(22, 23, 28, 0.8);
+  --header-line: rgba(255, 255, 255, 0.08);
+  /* Делает тёмно-синий логотип светлым, сохраняя прозрачность. */
+  --logo-filter: brightness(0) invert(0.94);
+
+  --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
 }
 
 *,
@@ -48,9 +133,26 @@ body {
   min-height: 100vh;
 }
 
+/*
+ * Полосу прокрутки страницы прячем: интерфейс без неё чище, а крутить можно
+ * колесом, тачпадом, клавишами и пальцем. У вложенных областей (таблица,
+ * списки) полосы остаются — там они подсказывают, что контент шире.
+ */
+html {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
+}
+
 img {
   display: block;
   max-width: 100%;
+}
+
+.logo-img {
+  filter: var(--logo-filter);
 }
 
 button,
@@ -165,17 +267,17 @@ p {
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #161a52;
+  background: var(--accent-fill-hover);
 }
 
 .btn-dark {
-  background: var(--ink);
-  color: #fff;
+  background: var(--inverse);
+  color: var(--on-inverse);
 }
 
 .btn-secondary {
@@ -236,7 +338,7 @@ p {
 .input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(29, 34, 102, 0.1);
+  box-shadow: 0 0 0 4px var(--accent-ring);
 }
 
 textarea.input {
@@ -252,7 +354,7 @@ textarea.input {
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: #f3f4f6;
+  background: var(--surface-sunken);
   font-size: 12px;
   color: var(--ink-2);
 }
@@ -330,9 +432,9 @@ textarea.input {
 
 .segmented > button[aria-selected="true"],
 .segmented > button[aria-pressed="true"] {
-  background: var(--surface);
+  background: var(--segment-active);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(14, 15, 20, 0.08);
+  box-shadow: var(--shadow-soft);
 }
 
 .segmented > button:disabled {

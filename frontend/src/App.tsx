@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router";
 
 import { AuthenticatedLayout } from "./components/Layout";
+import { startSmoothScroll } from "./lib/smoothScroll";
 import { AdminPage } from "./pages/AdminPage";
 import { CreatePage } from "./pages/CreatePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -23,5 +25,6 @@ const router = createBrowserRouter([
 ]);
 
 export function App() {
+  useEffect(() => startSmoothScroll(), []);
   return <RouterProvider router={router} />;
 }

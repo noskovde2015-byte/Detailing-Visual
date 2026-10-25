@@ -1,3 +1,6 @@
+// Базовые стили — первыми: CSS-модули страниц идут после и могут их уточнять.
+import "./styles/global.css";
+
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -5,7 +8,6 @@ import { createRoot } from "react-dom/client";
 import { isApiError } from "./api/client";
 import { queryKeys } from "./api/queries";
 import { App } from "./App";
-import "./styles/global.css";
 
 /**
  * Если пользователя заблокировали посреди сессии, любой запрос вернёт 403.

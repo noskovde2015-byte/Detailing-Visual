@@ -23,8 +23,8 @@
   width: 88px;
   height: 88px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -92,8 +92,8 @@
 }
 
 .dark {
-  background: var(--ink);
-  color: #fff;
+  background: var(--feature-bg);
+  color: var(--feature-text);
   border-radius: var(--radius-xl);
 }
 
@@ -106,7 +106,7 @@
 .dark .tileTitle,
 .dark .tileText,
 .dark .bigLabel {
-  color: #b4b7c0;
+  color: var(--feature-muted);
 }
 
 .big {
@@ -154,7 +154,7 @@
 .light {
   margin-top: auto;
   background: #fff;
-  color: var(--ink);
+  color: #0e0f14;
 }
 
 .stats {
@@ -206,4 +206,48 @@
 .statLabel {
   font-size: 13px;
   color: var(--muted);
+}
+
+.appearance {
+  padding: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+
+.appearance > div:first-child {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.themes {
+  flex: 0 1 auto;
+}
+
+.themes > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .themes {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .themes > button {
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  /* На узком экране иконки не помещаются вместе с подписью. */
+  .themes svg {
+    display: none;
+  }
 }

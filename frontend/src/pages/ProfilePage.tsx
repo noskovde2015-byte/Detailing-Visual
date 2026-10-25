@@ -1,10 +1,11 @@
 import { Link, useNavigate } from "react-router";
 
 import { useGenerationTotal, useLogout } from "../api/queries";
-import { GoogleIcon, SparkIcon } from "../components/icons";
+import { GoogleIcon, MonitorIcon, MoonIcon, SparkIcon, SunIcon } from "../components/icons";
 import { usePricing } from "../components/PricingModal";
 import { formatDate, formatRub, GENERATION_FORMS, plural } from "../lib/format";
 import { PACKS, pricePerGeneration } from "../lib/pricing";
+import { setThemePreference, useTheme, type ThemePreference } from "../lib/theme";
 import { useCurrentUser } from "../lib/useCurrentUser";
 import styles from "./ProfilePage.module.css";
 
@@ -104,7 +105,47 @@ export function ProfilePage() {
           <Stat value={failed.data} label="Не удалось · вернули на баланс" />
         </div>
       </section>
+
+      <AppearanceSettings />
     </main>
+  );
+}
+
+const THEME_OPTIONS: { value: ThemePreference; label: string; Icon: typeof SunIcon }[] = [
+  { value: "system", label: "Системная", Icon: MonitorIcon },
+  { value: "light", label: "Светлая", Icon: SunIcon },
+  { value: "dark", label: "Тёмная", Icon: MoonIcon },
+];
+
+function AppearanceSettings() {
+  const { preference } = useTheme();
+  return (
+    <section aria-labelledby="appearance-title" className={`card ${styles.appearance}`}>
+      <div>
+        <h2 id="appearance-title" className={styles.statsTitle}>
+          Оформление
+        </h2>
+        <p className={styles.tileText}>
+          «Системная» — тема меняется вместе с настройкой устройства. Выбор запоминается в этом
+          браузере.
+        </p>
+      </div>
+      <div role="radiogroup" aria-label="Тема оформления" className={`segmented ${styles.themes}`}>
+        {THEME_OPTIONS.map(({ value, label, Icon }) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={preference === value}
+            aria-pressed={preference === value}
+            onClick={() => setThemePreference(value)}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

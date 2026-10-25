@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation } from "react-router";
 import { logout } from "../api/api";
 import { isApiError } from "../api/client";
 import { useMe } from "../api/queries";
+import { scrollToTop } from "../lib/smoothScroll";
 import { Header } from "./Header";
 import { PricingProvider } from "./PricingModal";
 
@@ -33,6 +34,10 @@ export function FullPageError({ message }: { message: string }) {
 export function AuthenticatedLayout() {
   const { data: user, isPending, isError, error } = useMe();
   const location = useLocation();
+
+  // SPA не перезагружает страницу: без этого новая страница открылась бы
+  // на той же высоте, где был скролл на предыдущей.
+  useEffect(() => scrollToTop(), [location.pathname]);
 
   if (isPending) return <FullPageSpinner />;
   if (isError) {

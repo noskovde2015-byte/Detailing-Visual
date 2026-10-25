@@ -46,7 +46,7 @@
 
 .highlight {
   border: 2px solid var(--accent);
-  box-shadow: 0 12px 30px rgba(29, 34, 102, 0.12);
+  box-shadow: 0 12px 30px var(--accent-ring);
 }
 
 .packTop {
@@ -64,8 +64,8 @@
 }
 
 .badgeAccent {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 .count {
