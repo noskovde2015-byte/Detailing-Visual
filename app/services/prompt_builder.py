@@ -44,9 +44,12 @@ IMAGE_DESCRIPTIONS: dict[InputSlot, str] = {
 }
 
 FINISH_DESCRIPTIONS: dict[FilmFinish, str] = {
+    # «Mirror-like» давало эффект леденца: описываем глянец как заводскую краску
+    # и отдельно запрещаем перебор с блеском.
     FilmFinish.GLOSSY: (
-        "GLOSSY: a high-gloss, mirror-like surface with sharp reflections of the "
-        "environment on the body panels. Do not make the surface matte or satin."
+        "GLOSSY: like fresh factory paint with a clear coat: a smooth surface with "
+        "natural reflections of the surroundings. Keep it realistic: not wet-looking, "
+        "not candy-like and not chrome-like. Do not make the surface matte or satin."
     ),
     FilmFinish.MATTE: (
         "MATTE: a flat, non-reflective surface with soft diffuse light and "
@@ -59,6 +62,15 @@ FINISH_DESCRIPTIONS: dict[FilmFinish, str] = {
         "METALLIC: visible metallic flake that sparkles under the light."
     ),
 }
+
+# Цвет кузова — главное, за что платит клиент. Без этой оговорки громкие
+# формулировки других задач (антихром, диски) «перетягивали» оттенок и блеск.
+# Других задач по имени не называем: упоминание выключенной опции модель может
+# принять за просьбу её выполнить.
+BODY_COLOR_PRIORITY = (
+    "The body color is the priority of this edit: no other change in this edit may "
+    "alter the body color, its brightness or its finish."
+)
 
 # Если пользователь выбрал цвет, но не тип покрытия, рисуем как заводскую краску.
 DEFAULT_COLOR_FINISH = FilmFinish.GLOSSY
@@ -98,7 +110,7 @@ def _film_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | No
     text = (
         f"Recolor the car's painted body panels so they look wrapped in the film shown "
         f"in the {refs[InputSlot.FILM]} image. Match the film's color, texture and "
-        f"any visible pattern as closely as possible."
+        f"any visible pattern as closely as possible. {BODY_COLOR_PRIORITY}"
     )
     if params.film_finish is not None:
         text += f" The film finish is {FINISH_DESCRIPTIONS[params.film_finish]}"
@@ -117,7 +129,8 @@ def _color_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | N
         f"image. The swatch shows only the base color under neutral light: render it "
         f"with the scene's real lighting, shading and reflections, so darker and "
         f"brighter areas of the body vary naturally around this color. Do not add any "
-        f"pattern or texture. The film finish is {FINISH_DESCRIPTIONS[finish]}"
+        f"pattern or texture. The film finish is {FINISH_DESCRIPTIONS[finish]} "
+        f"{BODY_COLOR_PRIORITY}"
     )
 
 
@@ -130,16 +143,16 @@ def _antichrome_task(
     # перечисляем детали явно, а исключения — отдельно, чтобы не зачернить лишнее.
     return (
         "Apply a full chrome delete: every chrome or polished bright-metal part of the "
-        "car becomes GLOSSY BLACK, with no chrome left anywhere on the body. This "
+        "car becomes gloss black, like piano-black trim, with no chrome left anywhere "
+        "on the body. This "
         "includes, wherever present: window surrounds and window line trim, pillar "
         "trim, the front grille (its frame, slats, mesh and any chrome inserts), "
         "roof rails, bumper trim and inserts, fog light surrounds, side moldings, "
         "door handle trim, mirror cap trim, tailgate and trunk lid trim, and chrome "
         "badges and lettering. Keep the exact shape, size and position of every part "
-        "(badges stay legible); only the finish changes. Glossy black means a deep "
-        "black with real reflections of the environment, not matte or satin. Do not "
-        "change the wheels, the headlights, the taillights, the exhaust tips or the "
-        "license plate."
+        "(badges stay legible); only the finish changes. The black applies only to "
+        "these trim parts and must not affect the body color. Do not change the "
+        "wheels, the headlights, the taillights, the exhaust tips or the license plate."
     )
 
 

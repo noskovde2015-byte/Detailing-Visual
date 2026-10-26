@@ -90,7 +90,9 @@ def test_antichrome_lists_grille_and_roof_rails() -> None:
     assert "chrome delete" in prompt
     assert "front grille" in prompt
     assert "roof rails" in prompt
-    assert "GLOSSY BLACK" in prompt
+    assert "gloss black" in prompt
+    # Чёрная отделка не должна «перетекать» на кузов.
+    assert "must not affect the body color" in prompt
     # Исключения: диски и фары антихром не трогает.
     assert "Do not change the wheels" in prompt
 
@@ -101,3 +103,16 @@ def test_wheels_design_is_copied_exactly() -> None:
     assert "Copy the wheel design from the second image exactly" in prompt
     assert "same number of spokes" in prompt
     assert "Do not simplify, redesign" in prompt
+
+
+def test_body_color_has_priority_over_other_tasks() -> None:
+    params = GenerationParams(film_color="#1F3A93", antichrome=True)
+    prompt = build_prompt(params, [ImageRole.CAR])
+    assert "The body color is the priority of this edit" in prompt
+
+
+def test_glossy_is_not_mirror_or_candy() -> None:
+    params = GenerationParams(film_color="#1F3A93", film_finish=FilmFinish.GLOSSY)
+    prompt = build_prompt(params, [ImageRole.CAR])
+    assert "mirror-like" not in prompt
+    assert "not candy-like" in prompt
