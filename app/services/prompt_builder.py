@@ -126,9 +126,20 @@ def _antichrome_task(
 ) -> str | None:
     if not params.antichrome:
         return None
+    # Модель понимает «и тому подобное» узко (так пропала решётка), поэтому
+    # перечисляем детали явно, а исключения — отдельно, чтобы не зачернить лишнее.
     return (
-        "Apply a chrome delete: turn all chrome trim on the car (window surrounds, "
-        "grille trim, mirror caps trim, door handle trim and similar) into glossy black."
+        "Apply a full chrome delete: every chrome or polished bright-metal part of the "
+        "car becomes GLOSSY BLACK, with no chrome left anywhere on the body. This "
+        "includes, wherever present: window surrounds and window line trim, pillar "
+        "trim, the front grille (its frame, slats, mesh and any chrome inserts), "
+        "roof rails, bumper trim and inserts, fog light surrounds, side moldings, "
+        "door handle trim, mirror cap trim, tailgate and trunk lid trim, and chrome "
+        "badges and lettering. Keep the exact shape, size and position of every part "
+        "(badges stay legible); only the finish changes. Glossy black means a deep "
+        "black with real reflections of the environment, not matte or satin. Do not "
+        "change the wheels, the headlights, the taillights, the exhaust tips or the "
+        "license plate."
     )
 
 
@@ -164,15 +175,22 @@ def _wheels_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | 
     if InputSlot.WHEEL not in refs or params.wheels is None:
         return None
     wheels = params.wheels
+    ref = refs[InputSlot.WHEEL]
+    # Модель склонна «додумывать» диск: упрощать спицы, менять их число и форму.
+    # Поэтому отдельно и подробно запрещаем менять рисунок.
     return (
         f"The car currently has {wheels.current_size}-inch wheels. Replace all visible "
-        f"wheels with the wheels shown in the {refs[InputSlot.WHEEL]} image, keeping "
-        f"their design, color and finish exactly as in that photo, "
-        f"sized as {wheels.new_size}-inch wheels. "
+        f"wheels with the wheels shown in the {ref} image, sized as "
+        f"{wheels.new_size}-inch wheels. "
         f"{_wheel_size_hint(wheels.current_size, wheels.new_size)} "
-        f"Keep the overall height of the wheel with tire close to the original, so the "
-        f"car's stance and ride height do not change. Fit the wheels realistically to "
-        f"the car's perspective, lighting and shadows."
+        f"Copy the wheel design from the {ref} image exactly: the same number of "
+        f"spokes, the same spoke shape, thickness and pattern, the same center cap and "
+        f"lug nut layout, the same color and finish. Do not simplify, redesign, mix "
+        f"with the original wheels or invent details. Only the size and the viewing "
+        f"angle may differ from the {ref} image. Keep the tires as black rubber "
+        f"tires. Keep the overall height of the wheel with tire close to the original, "
+        f"so the car's stance and ride height do not change. Fit the wheels "
+        f"realistically to the car's perspective, lighting and shadows."
     )
 
 

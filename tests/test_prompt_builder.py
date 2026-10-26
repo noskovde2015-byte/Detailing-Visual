@@ -83,3 +83,21 @@ def test_color_task_describes_color() -> None:
 def test_color_without_finish_defaults_to_glossy() -> None:
     prompt = build_prompt(GenerationParams(film_color="#FFFFFF"), {ImageRole.CAR})
     assert "GLOSSY" in prompt
+
+
+def test_antichrome_lists_grille_and_roof_rails() -> None:
+    prompt = build_prompt(GenerationParams(antichrome=True), [ImageRole.CAR])
+    assert "chrome delete" in prompt
+    assert "front grille" in prompt
+    assert "roof rails" in prompt
+    assert "GLOSSY BLACK" in prompt
+    # Исключения: диски и фары антихром не трогает.
+    assert "Do not change the wheels" in prompt
+
+
+def test_wheels_design_is_copied_exactly() -> None:
+    params = GenerationParams(wheels=WheelParams(current_size=18, new_size=20))
+    prompt = build_prompt(params, [ImageRole.CAR, ImageRole.WHEEL])
+    assert "Copy the wheel design from the second image exactly" in prompt
+    assert "same number of spokes" in prompt
+    assert "Do not simplify, redesign" in prompt
