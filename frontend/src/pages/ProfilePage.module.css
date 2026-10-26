@@ -178,6 +178,9 @@
 }
 
 .more {
+  /* Невысокая ссылка: отступы расширяют зону нажатия, не сдвигая вёрстку. */
+  margin: -10px 0;
+  padding: 10px 0;
   font-size: 14px;
   font-weight: 500;
   text-decoration: none;

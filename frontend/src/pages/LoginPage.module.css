@@ -43,7 +43,10 @@
 .gift {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  /* Строка не переносится — иначе на узком экране звёздочка «отрывается» от текста. */
+  white-space: nowrap;
   font-size: 13px;
   color: var(--accent);
   font-weight: 500;

@@ -34,6 +34,28 @@ export const MonitorIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const GridIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="7" height="7" rx="2" />
+    <rect x="13" y="4" width="7" height="7" rx="2" />
+    <rect x="4" y="13" width="7" height="7" rx="2" />
+    <rect x="13" y="13" width="7" height="7" rx="2" />
+  </Svg>
+);
+
+export const UserIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8.5" r="3.8" />
+    <path d="M4.5 20c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5" />
+  </Svg>
+);
+
+export const WandIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 20 15 9M14 4v3M19 9h-3M17.5 5.5 16 7M11 5.5l1 1M18.5 12l-1-1" />
+  </Svg>
+);
+
 export const PlusIcon = (p: IconProps) => (
   <Svg strokeWidth={2.4} {...p}>
     <path d="M12 5v14M5 12h14" />

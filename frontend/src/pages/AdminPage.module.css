@@ -154,6 +154,10 @@
   border-radius: 0 12px 12px 0;
 }
 
+.inlineStatus {
+  display: none;
+}
+
 .selected td {
   background: var(--accent-soft);
 }
@@ -177,13 +181,13 @@
 }
 
 .userText b,
-.userText span {
+.userText > span:not(.inlineStatus) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.userText span {
+.userText > span:not(.inlineStatus) {
   font-size: 12px;
   color: var(--subtle);
 }
@@ -453,4 +457,147 @@
   flex-direction: column;
   gap: 10px;
   font-size: 14px;
+}
+
+/* ---------- телефоны ---------- */
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 26px;
+  }
+
+  .lead {
+    font-size: 14px;
+  }
+
+  /* Сводка 2×2 вместо четырёх карточек во весь экран. */
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .stat {
+    padding: 14px;
+    gap: 4px;
+  }
+
+  .statValue {
+    font-size: 24px;
+  }
+
+  .statLabel,
+  .statGood,
+  .statHint {
+    font-size: 12px;
+  }
+
+  .columns {
+    gap: 16px;
+  }
+
+  .users,
+  .panel {
+    padding: 16px;
+  }
+
+  .search {
+    flex: 1 1 100%;
+    min-width: 0;
+    height: 44px;
+  }
+
+  /*
+   * Таблица без горизонтальной прокрутки: «Генераций» и «Регистрация» есть
+   * в карточке пользователя, в списке достаточно имени, баланса и статуса.
+   */
+  /* Фиксированная раскладка: длинные имена обрезаются многоточием, а не
+     выталкивают колонку статуса за край. */
+  .table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .table th:nth-child(2),
+  .table td:nth-child(2) {
+    width: 72px;
+    text-align: right;
+  }
+
+  /* Статус переезжает под имя (см. inlineStatus). */
+  .table th:nth-child(5),
+  .table td:nth-child(5) {
+    display: none;
+  }
+
+  .table th,
+  .table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Кнопка с именем не шире ячейки — иначе текст не сокращается. */
+  .userButton {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table th:nth-child(5),
+  .table td:nth-child(5) {
+    width: 118px;
+  }
+
+  .table th:nth-child(3),
+  .table td:nth-child(3),
+  .table th:nth-child(4),
+  .table td:nth-child(4) {
+    display: none;
+  }
+
+  .table th,
+  .table td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .userButton {
+    max-width: none;
+  }
+
+  .formRow {
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .formButtons :global(.btn) {
+    height: 48px;
+  }
+}
+
+@media (pointer: coarse) {
+  .userButton {
+    min-height: 44px;
+  }
+}
+
+/*
+ * Когда карточка стоит под таблицей, к ней прокручиваем сразу после нажатия,
+ * а данные ещё грузятся. Пустая карточка короткая, страница кончается раньше,
+ * и прокрутка не доходит до места. Резервируем высоту экрана заранее.
+ */
+@media (max-width: 1023px) {
+  .panelActive {
+    min-height: calc(100dvh - 160px);
+  }
+}
+
+@media (max-width: 640px) {
+  .userText .inlineStatus {
+    display: inline-flex;
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+  }
 }

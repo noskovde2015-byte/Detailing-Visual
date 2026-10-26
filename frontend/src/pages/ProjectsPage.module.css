@@ -256,3 +256,24 @@
   gap: 8px;
   margin-top: 6px;
 }
+
+@media (pointer: coarse) {
+  .filter {
+    height: 42px;
+  }
+}
+
+@media (max-width: 640px) {
+  .head {
+    margin-bottom: 20px;
+  }
+
+  .lead {
+    font-size: 14px;
+  }
+
+  /* Отдельная кнопка не нужна: «Создание» всегда под пальцем в нижнем меню. */
+  .head :global(.btn) {
+    display: none;
+  }
+}

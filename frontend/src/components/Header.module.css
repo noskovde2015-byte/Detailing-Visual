@@ -139,15 +139,119 @@
   text-decoration: none;
 }
 
-@media (max-width: 640px) {
+.tabbar {
+  display: none;
+}
+
+/*
+ * Телефоны и планшеты: навигация не помещается в одну строку с остальным —
+ * переносим её в нижнее меню, сверху остаётся компактная строка.
+ */
+@media (max-width: 900px) {
+  .wrap {
+    padding: 8px 8px 0;
+    padding-top: max(8px, env(safe-area-inset-top));
+  }
+
   .bar {
-    border-radius: 24px;
-    padding: 10px 10px 10px 16px;
+    min-height: 56px;
+    padding: 6px 6px 6px 16px;
+    flex-wrap: nowrap;
+    gap: 8px;
+    border-radius: 999px;
+  }
+
+  .logo img {
+    height: 22px;
+  }
+
+  /* Картинка невысокая — растягиваем саму ссылку до удобной для пальца. */
+  .logo {
+    padding: 11px 0;
   }
 
   .nav {
-    order: 3;
-    flex-basis: 100%;
-    justify-content: flex-start;
+    display: none;
+  }
+
+  .balance {
+    height: 40px;
+    padding: 0 5px 0 10px;
+    font-size: 14px;
+  }
+
+  /* Слова «Баланс» и «генераций» прячем: остаётся иконка и число. */
+  .balanceWord {
+    display: none;
+  }
+
+  .plus {
+    width: 30px;
+    height: 30px;
+  }
+
+  .themeToggle,
+  .avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    padding: 6px 8px;
+    /* Отступ под «полоску» iPhone и жестовую панель Android. */
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    background: var(--header-bg);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-top: 1px solid var(--header-line);
+  }
+
+  .tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 52px;
+    color: var(--subtle);
+    font-size: 11px;
+    font-weight: 500;
+    text-decoration: none;
+    /* Без серой вспышки при нажатии в мобильном Safari/Chrome. */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tabIcon {
+    width: 52px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    transition: background 0.15s ease;
+  }
+
+  .tabActive {
+    color: var(--ink);
+  }
+
+  .tabActive .tabIcon {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+}
+
+/* На самых узких экранах (iPhone SE и уже) тема переключается только в профиле. */
+@media (max-width: 360px) {
+  .themeToggle {
+    display: none;
   }
 }

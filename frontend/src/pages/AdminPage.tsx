@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router";
 
 import { imageUrl, type AdminUser, type CreditGrant, type Generation } from "../api/api";
@@ -14,6 +14,7 @@ import {
 } from "../api/queries";
 import { CarIcon, SearchIcon } from "../components/icons";
 import { formatDate, formatWhen, generationsCount } from "../lib/format";
+import { revealElement } from "../lib/smoothScroll";
 import { useCurrentUser } from "../lib/useCurrentUser";
 import styles from "./AdminPage.module.css";
 
@@ -32,6 +33,21 @@ export function AdminPage() {
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const debouncedSearch = useDebounced(search.trim(), 300);
+  const panelRef = useRef<HTMLElement>(null);
+
+  function selectUser(id: string) {
+    setSelectedId(id);
+    // На телефоне карточка стоит под таблицей, далеко внизу: без прокрутки
+    // кажется, что нажатие ничего не сделало. На широком экране она рядом
+    // с таблицей и уже на виду — там не двигаем страницу.
+    requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      const list = panel?.previousElementSibling;
+      if (!panel || !list) return;
+      const stacked = panel.getBoundingClientRect().top >= list.getBoundingClientRect().bottom;
+      if (stacked) revealElement(panel, "start");
+    });
+  }
 
   if (!me.is_admin) return <Navigate to="/" replace />;
 
@@ -72,11 +88,15 @@ export function AdminPage() {
             offset={offset}
             onOffset={setOffset}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectUser}
           />
         </section>
 
-        <section aria-label="Карточка пользователя" className={`card ${styles.panel}`}>
+        <section
+          ref={panelRef}
+          aria-label="Карточка пользователя"
+          className={`card ${styles.panel} ${selectedId ? styles.panelActive : ""}`}
+        >
           {selectedId ? (
             <UserPanel key={selectedId} userId={selectedId} currentAdminId={me.id} />
           ) : (
@@ -199,6 +219,12 @@ function UsersTable({
                       <span className={styles.userText}>
                         <b>{user.name ?? "Без имени"}</b>
                         <span>{user.email}</span>
+                        {/* На телефоне колонки «Статус» нет — особый статус пишем под почтой. */}
+                        {(user.is_blocked || user.is_admin) && (
+                          <span className={`badge ${status.className} ${styles.inlineStatus}`}>
+                            {status.text}
+                          </span>
+                        )}
                       </span>
                     </button>
                   </td>

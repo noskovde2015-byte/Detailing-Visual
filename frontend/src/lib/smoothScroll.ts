@@ -17,10 +17,19 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/**
+ * Сенсорный экран без мыши (телефон, планшет). Палец и так прокручивает
+ * плавно с инерцией — перехват жестов только ломал бы родное поведение
+ * (резинку на краях, жест «назад», прокрутку внутри списков).
+ */
+function isTouchOnly(): boolean {
+  return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+}
+
 /** Запускает плавный скролл. Возвращает функцию остановки (для cleanup эффекта). */
 export function startSmoothScroll(): () => void {
   // Кого укачивает анимация, тем оставляем обычный скролл — это системная настройка.
-  if (lenis || prefersReducedMotion()) return () => undefined;
+  if (lenis || prefersReducedMotion() || isTouchOnly()) return () => undefined;
 
   const instance = new Lenis({
     autoRaf: true,
@@ -62,4 +71,47 @@ export function lockScroll(): () => void {
 export function scrollToTop(): void {
   if (lenis) lenis.scrollTo(0, { immediate: true, force: true });
   else window.scrollTo(0, 0);
+}
+
+/** Сколько сверху и снизу закрыто закреплёнными панелями (шапка, нижнее меню). */
+function coveredEdges(): { top: number; bottom: number } {
+  // Скрытый через display: none элемент даёт нулевой прямоугольник — то, что нужно.
+  const header = document.querySelector("[data-app-header]")?.getBoundingClientRect();
+  const tabbar = document.querySelector("[data-app-tabbar]")?.getBoundingClientRect();
+  return {
+    top: header ? Math.max(header.bottom, 0) : 0,
+    bottom: tabbar ? tabbar.height : 0,
+  };
+}
+
+/**
+ * Докручивает страницу так, чтобы элемент оказался на виду, — только если он
+ * сейчас (частично) скрыт: за краем экрана, под шапкой или нижним меню.
+ *
+ * align: "nearest" — сдвинуть ровно настолько, чтобы показать элемент
+ * (раскрытый список); "start" — поставить начало элемента под шапку, если
+ * оно не в верхней четверти видимой области (перейти к блоку целиком).
+ */
+export function revealElement(element: Element, align: "nearest" | "start" = "nearest"): void {
+  const gap = 12;
+  const { top: coveredTop, bottom: coveredBottom } = coveredEdges();
+  const rect = element.getBoundingClientRect();
+  const viewTop = coveredTop + gap;
+  const viewBottom = window.innerHeight - coveredBottom - gap;
+
+  let delta = 0;
+  if (align === "start") {
+    const comfortable = viewTop + (viewBottom - viewTop) * 0.25;
+    if (rect.top < viewTop || rect.top > comfortable) delta = rect.top - viewTop;
+  } else if (rect.bottom > viewBottom) {
+    // Не уводим верх элемента под шапку, даже если он выше экрана.
+    delta = Math.min(rect.bottom - viewBottom, rect.top - viewTop);
+  } else if (rect.top < viewTop) {
+    delta = rect.top - viewTop;
+  }
+  if (Math.abs(delta) < 1) return;
+
+  const target = window.scrollY + delta;
+  if (lenis) lenis.scrollTo(target);
+  else window.scrollTo({ top: target, behavior: prefersReducedMotion() ? "auto" : "smooth" });
 }

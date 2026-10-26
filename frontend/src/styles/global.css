@@ -468,3 +468,42 @@ textarea.input {
     animation-duration: 2.4s;
   }
 }
+
+/* ---------- телефоны и сенсорные экраны ---------- */
+
+/* Контент не должен прятаться под нижним меню (оно есть только у вошедших). */
+@media (max-width: 900px) {
+  body:has([data-app-tabbar]) {
+    padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (pointer: coarse) {
+  /*
+   * iPhone увеличивает страницу при фокусе на поле со шрифтом меньше 16px
+   * и не возвращает масштаб обратно. !important — потому что правило должно
+   * перекрыть размеры полей в стилях любых страниц.
+   */
+  input:not([type="checkbox"], [type="radio"], [type="color"], [type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Пальцу нужно ~44px, мышке хватает и 36. */
+  .btn-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .segmented > button {
+    height: 40px;
+  }
+}
+
+/* Сенсорному экрану «наведения» нет — серая вспышка при касании лишняя. */
+a,
+button,
+label {
+  -webkit-tap-highlight-color: transparent;
+}

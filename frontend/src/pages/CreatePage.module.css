@@ -467,3 +467,74 @@
   text-align: center;
   line-height: 1.4;
 }
+
+/* ---------- телефоны ---------- */
+
+.forTouch {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .forPointer {
+    display: none;
+  }
+
+  .forTouch {
+    display: inline;
+  }
+}
+
+@media (max-width: 480px) {
+  .placeholderHint {
+    text-align: center;
+  }
+
+  /* Шесть цветов в ряд: кружок ~40px — по нему попадает палец. */
+  .swatches {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  /* Подписи разной длины могут переноситься — поля выравниваем по низу. */
+  .wheels {
+    align-items: end;
+  }
+
+  /* Фото дисков — во всю ширину, размеры — парой под ним. */
+  .wheelDrop {
+    grid-column: span 2;
+    grid-row: auto;
+    min-height: 120px;
+  }
+
+  /* «Скачать» — главное действие, во всю ширину; остальные — парой ниже. */
+  .resultActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .resultActions > :first-child {
+    grid-column: span 2;
+  }
+
+  .tips {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 400px) {
+  /* «Металлик» не помещается в четверть ширины — два столбца. */
+  .finishes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .finish {
+    height: 44px;
+  }
+}
+
+@media (pointer: coarse) {
+  .fullTabs > button {
+    height: 44px;
+  }
+}

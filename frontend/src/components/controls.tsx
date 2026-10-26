@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 
+import { revealElement } from "../lib/smoothScroll";
 import { ChevronIcon } from "./icons";
 import styles from "./controls.module.css";
 
@@ -58,6 +59,12 @@ export function Select<T extends string | number>({
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // На телефоне список часто открывается у нижнего края — докручиваем, чтобы был виден.
+  useEffect(() => {
+    if (open && listRef.current) revealElement(listRef.current);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +103,7 @@ export function Select<T extends string | number>({
         <ChevronIcon className={styles.chevron} data-open={open} />
       </button>
       {open && (
-        <div role="listbox" aria-labelledby={`${id}-label`} className={styles.listbox}>
+        <div ref={listRef} role="listbox" aria-labelledby={`${id}-label`} className={styles.listbox}>
           {options.map((option) => (
             <button
               key={String(option)}

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
 import { imageUrl, isActive, type FilmFinish, type GenerationParams } from "../api/api";
@@ -17,6 +17,7 @@ import {
 import { usePricing } from "../components/PricingModal";
 import { FINISHES, SWATCHES, WHEEL_SIZES, swatchName } from "../lib/catalog";
 import { generationsCount } from "../lib/format";
+import { revealElement } from "../lib/smoothScroll";
 import { useCurrentUser } from "../lib/useCurrentUser";
 import styles from "./CreatePage.module.css";
 
@@ -45,6 +46,7 @@ export function CreatePage() {
   const [comment, setComment] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
+  const previewRef = useRef<HTMLElement>(null);
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [view, setView] = useState<View>("source");
   const { data: generation } = useGeneration(generationId);
@@ -110,6 +112,9 @@ export function CreatePage() {
       });
       setGenerationId(created.id);
       setView("source");
+      // На телефоне кнопка внизу длинной формы, а прогресс и результат — над ней,
+      // за краем экрана. Показываем, что генерация пошла.
+      if (previewRef.current) revealElement(previewRef.current, "start");
     } catch (error) {
       if (isApiError(error, 402)) {
         openPricing("На балансе закончились генерации. Пополните его, чтобы продолжить.");
@@ -141,7 +146,7 @@ export function CreatePage() {
 
       <form className={styles.layout} onSubmit={onSubmit} noValidate>
         {/* ---------------- превью ---------------- */}
-        <section aria-labelledby="preview-title" className={styles.previewColumn}>
+        <section ref={previewRef} aria-labelledby="preview-title" className={styles.previewColumn}>
           <div className={styles.previewHead}>
             <h2 id="preview-title" className={styles.previewTitle}>
               Ваш автомобиль
@@ -197,9 +202,20 @@ export function CreatePage() {
                     <span className={styles.placeholderIcon} aria-hidden="true">
                       <CarIcon size={30} />
                     </span>
-                    <span className={styles.placeholderTitle}>Перетащите фото автомобиля</span>
+                    {/* Перетаскивание есть только с мышью; на телефоне — камера или галерея. */}
+                    <span className={`${styles.placeholderTitle} ${styles.forPointer}`}>
+                      Перетащите фото автомобиля
+                    </span>
+                    <span className={`${styles.placeholderTitle} ${styles.forTouch}`}>
+                      Добавьте фото автомобиля
+                    </span>
                     <span className={styles.placeholderHint}>
-                      или <u>выберите файл</u> · JPEG, PNG или WEBP до 15 МБ
+                      <span className={styles.forPointer}>
+                        или <u>выберите файл</u> · JPEG, PNG или WEBP до 15 МБ
+                      </span>
+                      <span className={styles.forTouch}>
+                        <u>Сфотографируйте или выберите из галереи</u> · до 15 МБ
+                      </span>
                     </span>
                   </span>
                 )
