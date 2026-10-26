@@ -47,6 +47,15 @@ export function CreatePage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const previewRef = useRef<HTMLElement>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+
+  // Переход к полю пожеланий из пояснения к антихрому.
+  function focusComment() {
+    const field = commentRef.current;
+    if (!field) return;
+    revealElement(field);
+    field.focus({ preventScroll: true });
+  }
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [view, setView] = useState<View>("source");
   const { data: generation } = useGeneration(generationId);
@@ -410,10 +419,22 @@ export function CreatePage() {
             <div>
               <Switch
                 label="Антихром"
-                hint="Хромированные молдинги станут чёрными"
+                hint="Весь хром на кузове станет чёрным глянцем"
                 checked={antichrome}
                 onChange={setAntichrome}
               />
+              {antichrome && (
+                <p className={styles.antichromeNote} role="note">
+                  Сделаем полный антихром: молдинги и окантовка окон, решётка радиатора,
+                  рейлинги, вставки в бамперах и эмблемы станут чёрным глянцем. Диски, фары и
+                  номер не меняются. Хотите оставить что-то в хроме или поменять отделку —
+                  напишите{" "}
+                  <button type="button" className={styles.inlineLink} onClick={focusComment}>
+                    в пожеланиях
+                  </button>
+                  , например: «эмблемы оставить хромированными».
+                </p>
+              )}
               <Switch
                 label="Тонировка"
                 hint="Боковые и заднее стекло, лобовое без изменений"
@@ -492,6 +513,7 @@ export function CreatePage() {
               </span>
             </div>
             <textarea
+              ref={commentRef}
               id="comment"
               className={`input ${styles.comment}`}
               maxLength={COMMENT_MAX}

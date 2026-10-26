@@ -468,6 +468,30 @@
   line-height: 1.4;
 }
 
+.antichromeNote {
+  margin: 0 0 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Выглядит как ссылка, но это кнопка: переход внутри формы, а не на другую страницу. */
+.inlineLink {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 /* ---------- телефоны ---------- */
 
 .forTouch {
