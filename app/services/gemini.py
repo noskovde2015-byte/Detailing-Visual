@@ -93,9 +93,16 @@ class GeminiImageGenerator(ImageGenerator):
         self._client = genai.Client(api_key=config.api_key.get_secret_value())
         self._timeout = config.timeout_seconds
         self._max_attempts = config.max_attempts
+        self._image_size = config.image_size
         self.name = config.model
 
-    async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
         contents: list[str | types.Part] = [
             prompt,
             *(
@@ -105,14 +112,20 @@ class GeminiImageGenerator(ImageGenerator):
         ]
 
         try:
-            async for attempt in AsyncRetrying(
-                stop=stop_after_attempt(self._max_attempts),
-                wait=wait_exponential(multiplier=2, max=20),
-                retry=retry_if_exception(is_retryable),
-                reraise=True,
-            ):
-                with attempt:
-                    response = await self._request(contents)
+            try:
+                response = await self._request_with_retries(contents, aspect_ratio)
+            except errors.APIError as exc:
+                # 400 при заданном соотношении — скорее всего, модель перестала его
+                # принимать. Лучше результат без него (пропорции всё равно подгоним
+                # после генерации), чем отказ пользователю.
+                if exc.code != 400 or aspect_ratio is None:
+                    raise
+                logger.warning(
+                    "Gemini отклонил aspect_ratio=%s (%s), повторяю без него",
+                    aspect_ratio,
+                    exc.message,
+                )
+                response = await self._request_with_retries(contents, None)
         except Exception as exc:
             domain_error = to_domain_error(exc)
             if isinstance(domain_error, GenerationUnavailableError):
@@ -126,15 +139,31 @@ class GeminiImageGenerator(ImageGenerator):
 
         return self._extract_image(response)
 
+    async def _request_with_retries(
+        self, contents: list[str | types.Part], aspect_ratio: str | None
+    ) -> types.GenerateContentResponse:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(self._max_attempts),
+            wait=wait_exponential(multiplier=2, max=20),
+            retry=retry_if_exception(is_retryable),
+            reraise=True,
+        ):
+            with attempt:
+                return await self._request(contents, aspect_ratio)
+        raise AssertionError("unreachable: AsyncRetrying с reraise=True")
+
     async def _request(
-        self, contents: list[str | types.Part]
+        self, contents: list[str | types.Part], aspect_ratio: str | None
     ) -> types.GenerateContentResponse:
         return await asyncio.wait_for(
             self._client.aio.models.generate_content(
                 model=self.name,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"]
+                    response_modalities=["TEXT", "IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio, image_size=self._image_size
+                    ),
                 ),
             ),
             timeout=self._timeout,

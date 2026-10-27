@@ -31,7 +31,16 @@ class ImageGenerator(ABC):
     name: str
 
     @abstractmethod
-    async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData: ...
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
+        """aspect_ratio — желаемое соотношение сторон результата («5:4»).
+        Генератор, который не умеет его задавать, может параметр игнорировать:
+        точные пропорции всё равно подгоняются после генерации."""
 
 
 def configured_model_name() -> str:

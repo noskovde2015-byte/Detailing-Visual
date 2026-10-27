@@ -55,7 +55,13 @@ async def _stored_keys(generation_id: str) -> list[str]:
 class RefusingGenerator(ImageGenerator):
     name = "refusing"
 
-    async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
         raise GenerationRefusedError("Модель не смогла обработать это фото.")
 
 

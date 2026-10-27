@@ -106,7 +106,13 @@ async def test_failed_generation_is_refunded(
     class RefusingGenerator(ImageGenerator):
         name = "refusing"
 
-        async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+        async def generate(
+            self,
+            prompt: str,
+            images: Sequence[ImageData],
+            *,
+            aspect_ratio: str | None = None,
+        ) -> ImageData:
             raise GenerationRefusedError("Отказ")
 
     monkeypatch.setattr(generations_api, "get_image_generator", RefusingGenerator)

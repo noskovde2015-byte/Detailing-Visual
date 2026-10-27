@@ -123,7 +123,13 @@ async def test_failed_generation_not_counted(
     class RefusingGenerator(ImageGenerator):
         name = "refusing"
 
-        async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+        async def generate(
+            self,
+            prompt: str,
+            images: Sequence[ImageData],
+            *,
+            aspect_ratio: str | None = None,
+        ) -> ImageData:
             raise GenerationRefusedError("Модель не смогла обработать это фото.")
 
     monkeypatch.setattr(generations_api, "get_image_generator", RefusingGenerator)
@@ -165,7 +171,13 @@ async def test_palette_color_flow(
     class CapturingGenerator(ImageGenerator):
         name = "capturing"
 
-        async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+        async def generate(
+            self,
+            prompt: str,
+            images: Sequence[ImageData],
+            *,
+            aspect_ratio: str | None = None,
+        ) -> ImageData:
             captured["prompt"] = prompt
             captured["images"] = list(images)
             return images[0]

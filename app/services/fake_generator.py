@@ -25,7 +25,14 @@ class FakeImageGenerator(ImageGenerator):
             else delay_seconds
         )
 
-    async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
+        # Возвращает само фото машины — его пропорции и так совпадают с исходником.
         if not images:
             raise ValueError("Нужно хотя бы одно входное изображение")
         await asyncio.sleep(self._delay)

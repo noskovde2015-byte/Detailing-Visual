@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import settings
+from app.services.aspect_ratio import ImageSize, ratio_distance
+from app.services.image_generator import ImageData
 
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 JPEG_QUALITY = 90
@@ -113,3 +115,52 @@ def make_preview(data: bytes) -> ProcessedImage:
         width=image.width,
         height=image.height,
     )
+
+
+# Ниже этой разницы пропорции считаем совпавшими и картинку не пересохраняем.
+_SAME_RATIO = 0.002
+
+_SAVE_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
+
+
+def fit_aspect_ratio(result: ImageData, source: ImageSize) -> ImageData:
+    """Подрезает результат модели до точных пропорций исходного фото.
+
+    Модель принимает только фиксированные соотношения (5:4, 4:3, 16:9…), а фото
+    бывают «почти» такими: 1600×1300 — это не ровно 5:4. Небольшую разницу
+    срезаем поровну с двух сторон. Если разница больше допуска, оставляем как
+    есть: такой срез мог бы отрезать часть машины.
+
+    Функция блокирующая: из async-кода вызывать через asyncio.to_thread.
+    """
+    image_format = _SAVE_FORMATS.get(result.mime_type)
+    if image_format is None:
+        return result
+
+    with Image.open(io.BytesIO(result.data)) as opened:
+        opened.load()
+        image = opened.copy()
+
+    difference = ratio_distance(image.width / image.height, source.ratio)
+    if (
+        difference <= _SAME_RATIO
+        or difference > settings.generation.aspect_crop_tolerance
+    ):
+        return result
+
+    if image.width / image.height > source.ratio:
+        width = round(image.height * source.ratio)
+        left = (image.width - width) // 2
+        box = (left, 0, left + width, image.height)
+    else:
+        height = round(image.width / source.ratio)
+        top = (image.height - height) // 2
+        box = (0, top, image.width, top + height)
+
+    cropped = image.crop(box)
+    output = io.BytesIO()
+    if image_format == "JPEG":
+        cropped.convert("RGB").save(output, format="JPEG", quality=95, optimize=True)
+    else:
+        cropped.save(output, format=image_format)
+    return ImageData(data=output.getvalue(), mime_type=result.mime_type)

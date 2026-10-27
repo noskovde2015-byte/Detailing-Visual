@@ -126,7 +126,13 @@ async def test_temporary_failure_is_retried(
         name = "flaky"
         calls = 0
 
-        async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+        async def generate(
+            self,
+            prompt: str,
+            images: Sequence[ImageData],
+            *,
+            aspect_ratio: str | None = None,
+        ) -> ImageData:
             FlakyGenerator.calls += 1
             if FlakyGenerator.calls == 1:
                 raise GenerationTemporaryError("Сервис генерации временно перегружен.")

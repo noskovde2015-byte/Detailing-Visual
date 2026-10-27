@@ -1,10 +1,21 @@
+import io
+
+from PIL import Image
+
 from app.models.generation_image import ImageRole
 from app.schemas.generation import GenerationParams, WheelParams
 from app.services.colors import render_swatch
 from app.services.image_generator import ImageData
 from app.services.model_request import build_model_request
 
-CAR = ImageData(data=b"car", mime_type="image/jpeg")
+
+def _jpeg(width: int, height: int) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", (width, height), (90, 90, 90)).save(output, format="JPEG")
+    return output.getvalue()
+
+
+CAR = ImageData(data=_jpeg(500, 400), mime_type="image/jpeg")
 FILM = ImageData(data=b"film", mime_type="image/jpeg")
 WHEEL = ImageData(data=b"wheel", mime_type="image/jpeg")
 
@@ -31,3 +42,12 @@ def test_color_swatch_is_rendered_in_film_slot() -> None:
     )
     assert request.images[2] == WHEEL
     assert "second image is a flat swatch" in request.prompt
+
+
+def test_aspect_ratio_follows_car_photo() -> None:
+    request = build_model_request(
+        GenerationParams(antichrome=True), {ImageRole.CAR: CAR}
+    )
+    assert request.source_size.width == 500
+    assert request.source_size.height == 400
+    assert request.aspect_ratio == "5:4"

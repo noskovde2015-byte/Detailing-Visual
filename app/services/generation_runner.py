@@ -16,8 +16,8 @@ from app.services.image_generator import (
     ImageGenerationError,
     ImageGenerator,
 )
-from app.services.images import make_preview
-from app.services.model_request import build_model_request
+from app.services.images import fit_aspect_ratio, make_preview
+from app.services.model_request import ModelRequest, build_model_request
 from app.services.storage import Storage, build_image_key
 
 logger = logging.getLogger(__name__)
@@ -149,9 +149,12 @@ async def run_generation(
                 if image.role in INPUT_ROLES
             }
 
-            request = build_model_request(params, uploaded)
+            request = await asyncio.to_thread(build_model_request, params, uploaded)
             async with asyncio.timeout(timeout_seconds):
-                result = await generator.generate(request.prompt, request.images)
+                result = await generator.generate(
+                    request.prompt, request.images, aspect_ratio=request.aspect_ratio
+                )
+            result = await _try_fit_aspect_ratio(generation_id, result, request)
 
             for role, image in (
                 (ImageRole.RESULT, result),
@@ -209,6 +212,21 @@ async def run_generation(
         await _cleanup(storage, saved_keys)
         await mark_failed(session_factory, generation_id, GENERIC_ERROR)
         return GenerationOutcome.FAILED
+
+
+async def _try_fit_aspect_ratio(
+    generation_id: uuid.UUID, result: ImageData, request: ModelRequest
+) -> ImageData:
+    """Доводит пропорции результата до исходного фото. Не смогли — не беда:
+    лучше отдать результат как есть, чем провалить оплаченную генерацию."""
+    try:
+        return await asyncio.to_thread(fit_aspect_ratio, result, request.source_size)
+    except Exception:
+        logger.exception(
+            "Генерация %s: не удалось подогнать пропорции, сохраняю как есть",
+            generation_id,
+        )
+        return result
 
 
 async def _try_make_preview(

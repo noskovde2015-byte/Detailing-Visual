@@ -45,6 +45,8 @@ class GeminiConfig(BaseModel):
     timeout_seconds: int = 120
     max_attempts: int = 3
     max_retry_delay_seconds: float = 30.0
+    # Размер результата. 1K и 2K у Nano Banana Pro стоят одинаково, 4K — дороже.
+    image_size: Literal["1K", "2K", "4K"] = "2K"
 
 
 class GenerationConfig(BaseModel):
@@ -57,6 +59,9 @@ class GenerationConfig(BaseModel):
     max_image_pixels: int = Field(default=50_000_000, gt=0)
     preview_max_side: int = Field(default=512, ge=64)
     preview_quality: int = Field(default=80, ge=30, le=95)
+    aspect_crop_tolerance: float = Field(default=0.05, ge=0, le=0.2)
+    """Насколько (в долях) пропорции результата могут отличаться от исходного
+    фото, чтобы их ещё можно было подрезать до точных. Больше — оставляем как есть."""
 
 
 class CleanupConfig(BaseModel):

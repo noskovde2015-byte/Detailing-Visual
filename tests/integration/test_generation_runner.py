@@ -34,7 +34,13 @@ pytestmark = pytest.mark.anyio
 class TemporaryFailure(ImageGenerator):
     name = "temporary-failure"
 
-    async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
         raise GenerationTemporaryError("Сервис генерации временно перегружен.")
 
 
@@ -44,7 +50,13 @@ class Slow(ImageGenerator):
     def __init__(self) -> None:
         self.started = asyncio.Event()
 
-    async def generate(self, prompt: str, images: Sequence[ImageData]) -> ImageData:
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
         self.started.set()
         await asyncio.sleep(30)
         return images[0]
