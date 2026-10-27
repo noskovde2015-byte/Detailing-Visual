@@ -116,3 +116,24 @@ def test_glossy_is_not_mirror_or_candy() -> None:
     prompt = build_prompt(params, [ImageRole.CAR])
     assert "mirror-like" not in prompt
     assert "not candy-like" in prompt
+
+
+def test_comment_cannot_silently_change_body_color() -> None:
+    params = GenerationParams(
+        film_color="#1F3A93", comment="накладки на капот и бампер чёрным глянцем"
+    )
+    prompt = build_prompt(params, [ImageRole.CAR])
+    assert "Apply each wish only to the parts it names" in prompt
+    assert "Change the body color only if a wish explicitly asks" in prompt
+
+
+def test_body_color_rule_applies_without_options() -> None:
+    # Правило в общих Rules: действует, даже если цвет не выбран.
+    prompt = build_prompt(GenerationParams(antichrome=True), [ImageRole.CAR])
+    assert "do not lighten, darken, desaturate or shift its hue" in prompt
+
+
+def test_explicit_wish_can_still_change_body_color() -> None:
+    # Правило про цвет не должно запрещать прямую просьбу перекрасить кузов.
+    prompt = build_prompt(GenerationParams(comment="кузов в синий"), [ImageRole.CAR])
+    assert "The only exception is a customer wish below" in prompt

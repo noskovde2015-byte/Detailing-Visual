@@ -78,6 +78,7 @@ DEFAULT_COLOR_FINISH = FilmFinish.GLOSSY
 RULES = """Rules:
 - Change only the car. Do not alter anything that is not part of the car.
 - Keep unchanged: the background, the lighting, the camera angle, the car's shape and proportions, the license plate and everything else not mentioned in the tasks above.
+- Keep the body color exactly as set in the tasks above, or as in the original photo if no body color is set: do not lighten, darken, desaturate or shift its hue. The only exception is a customer wish below that explicitly asks to change the body color.
 - Do not crop, zoom or re-frame the image.
 - The result must look like a realistic photograph of the same car."""
 
@@ -237,8 +238,15 @@ def build_prompt(params: GenerationParams, roles: Collection[ImageRole]) -> str:
     comment = _sanitize_comment(params.comment) if params.comment else ""
     if comment:
         parts.append(
+            # Без этих оговорок пожелание вроде «накладки чёрным глянцем» модель
+            # понимала как повод перерисовать всю окраску — кузов светлел.
             "Additional wishes from the customer. Follow them only if they concern the "
-            "car and do not conflict with the rules above:\n"
+            "car and do not conflict with the rules above. Apply each wish only to the "
+            "parts it names. A wish about trim, accents or other details (for example, "
+            "making some parts black) changes only those parts: the body color, its "
+            "brightness, saturation and finish stay exactly as described above. Change "
+            "the body color only if a wish explicitly asks to change the body color "
+            "itself:\n"
             f"{COMMENT_DELIMITER}{comment}{COMMENT_DELIMITER}"
         )
 
