@@ -9,6 +9,11 @@ WORKDIR /app
 # Сначала только манифесты: слой с node_modules пересобирается лишь при смене
 # зависимостей, а не при каждой правке кода.
 COPY package.json package-lock.json ./
+# Связь с registry.npmjs.org из России бывает нестабильной (обрывы посреди
+# загрузки): больше повторов и терпеливее таймауты, чтобы сборка не падала.
+ENV npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund
 

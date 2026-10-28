@@ -1,0 +1,108 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "http-in",
+      "listen": "0.0.0.0",
+      "port": 10809,
+      "protocol": "http",
+      "settings": {}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "node-1",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "NODE1_IP",
+            "port": 443,
+            "users": [
+              {
+                "id": "NODE1_UUID",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "NODE1_SNI",
+          "fingerprint": "chrome",
+          "publicKey": "NODE1_PUBLIC_KEY",
+          "shortId": "NODE1_SHORT_ID"
+        }
+      }
+    },
+    {
+      "tag": "node-2",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "NODE2_IP",
+            "port": 443,
+            "users": [
+              {
+                "id": "NODE2_UUID",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "NODE2_SNI",
+          "fingerprint": "chrome",
+          "publicKey": "NODE2_PUBLIC_KEY",
+          "shortId": "NODE2_SHORT_ID"
+        }
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "observatory": {
+    "subjectSelector": ["node-"],
+    "probeUrl": "https://www.google.com/generate_204",
+    "probeInterval": "30s",
+    "enableConcurrency": true
+  },
+  "routing": {
+    "domainStrategy": "AsIs",
+    "balancers": [
+      {
+        "tag": "nodes",
+        "selector": ["node-"],
+        "strategy": {
+          "type": "leastPing"
+        },
+        "fallbackTag": "node-1"
+      }
+    ],
+    "rules": [
+      {
+        "inboundTag": ["http-in"],
+        "domain": ["domain:googleapis.com", "domain:ipinfo.io"],
+        "balancerTag": "nodes"
+      },
+      {
+        "inboundTag": ["http-in"],
+        "outboundTag": "block"
+      }
+    ]
+  }
+}

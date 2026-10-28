@@ -1,0 +1,40 @@
+# Продакшен-надстройка над compose.yaml. На сервере в .env стоит
+#   COMPOSE_FILE=compose.yaml:compose.prod.yaml
+# поэтому хватает обычных `docker compose up -d --build`, `docker compose logs …`.
+#
+# Что меняется относительно разработки:
+# - наружу (на 127.0.0.1 хоста) смотрит только web: его проксирует nginx хоста с HTTPS;
+# - воркер ходит в Gemini через xray-client → зарубежные узлы.
+
+services:
+  api:
+    # API доступен только через web (/api). Отдельный порт на хосте не нужен.
+    ports: !reset []
+
+  worker:
+    environment:
+      # Клиент Gemini (httpx и aiohttp) сам берёт прокси из окружения.
+      HTTPS_PROXY: http://xray-client:10809
+      # Всё внутреннее и S3 — напрямую. S3 обязательно: иначе фото пойдут
+      # через заграницу, а xray-client такие запросы всё равно заблокирует.
+      NO_PROXY: localhost,127.0.0.1,postgres,redis,api,${S3_HOST:?Задайте S3_HOST в .env}
+    depends_on:
+      xray-client:
+        condition: service_healthy
+
+  xray-client:
+    build: ./deploy/xray
+    image: detailing-xray:local
+    pull_policy: build
+    restart: unless-stopped
+    volumes:
+      # Создаётся из deploy/xray/client.example.json, в git не хранится (ключи).
+      - ./deploy/xray/client.json:/etc/xray/config.json:ro
+    healthcheck:
+      # Проверяем, что клиент слушает порт. Живость узлов Xray проверяет сам
+      # и переключается между ними. Если недоступны оба, генерация завершится
+      # ошибкой и вернётся пользователю на баланс.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "10809"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

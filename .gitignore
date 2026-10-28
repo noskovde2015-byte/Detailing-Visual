@@ -223,3 +223,6 @@ __marimo__/
 
 # Шаблонное lib/ выше — для Python-сборок; папку фронта не игнорируем.
 !frontend/src/lib/
+
+# Ключи Xray для основного сервера (создаётся из client.example.json).
+deploy/xray/client.json
