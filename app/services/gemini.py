@@ -21,9 +21,26 @@ from app.services.image_generator import (
     ImageData,
     ImageGenerationError,
     ImageGenerator,
+    OutageReason,
 )
 
+try:
+    # google-genai ходит через aiohttp, если он установлен (в проекте он есть
+    # как зависимость aiobotocore), иначе через httpx. Ловим ошибки обоих.
+    from aiohttp import ClientConnectionError as _AiohttpConnectionError
+except ImportError:  # pragma: no cover
+    _AiohttpConnectionError = httpx.TransportError
+
 logger = logging.getLogger(__name__)
+
+NETWORK_ERRORS: tuple[type[BaseException], ...] = (
+    httpx.TransportError,
+    _AiohttpConnectionError,
+)
+"""Нет связи: недоступен прокси, оба узла, или соединение оборвалось."""
+
+CHECK_TIMEOUT_SECONDS = 20
+DETAIL_MAX_LENGTH = 500
 
 REFUSED_MESSAGE = (
     "Модель не смогла обработать это фото. "
@@ -62,8 +79,63 @@ def is_daily_quota_error(exc: errors.APIError) -> bool:
     return False
 
 
+def _is_api_key_invalid(exc: errors.APIError) -> bool:
+    for item in _error_details(exc):
+        if item.get("reason") == "API_KEY_INVALID":
+            return True
+    return "api key not valid" in (exc.message or "").lower()
+
+
+def outage_reason(exc: BaseException) -> OutageReason | None:
+    """Ошибка касается всех генераций (а не этого фото)? Тогда — её причина.
+
+    Такие ошибки бессмысленно повторять по каждой задаче: следующий запрос
+    упадёт так же, а запросы из неподдерживаемого региона ещё и привлекают
+    внимание Google к аккаунту. Очередь ставится на паузу до устранения.
+    """
+    if isinstance(exc, NETWORK_ERRORS):
+        return OutageReason.NETWORK
+    if not isinstance(exc, errors.APIError):
+        return None
+
+    message = (exc.message or "").lower()
+    match exc.code:
+        case 402:
+            # Кончилась предоплата (Prepay) — Google отвечает именно 402.
+            return OutageReason.BILLING
+        case 400 if _is_api_key_invalid(exc):
+            return OutageReason.AUTH
+        case 400 if exc.status == "FAILED_PRECONDITION":
+            # «User location is not supported for the API use.» — запрос пришёл
+            # из страны, где Gemini API не работает (или без оплаты недоступен).
+            if "billing" in message:
+                return OutageReason.BILLING
+            if any(word in message for word in ("location", "country", "region")):
+                return OutageReason.REGION
+            return None
+        case 401:
+            return OutageReason.AUTH
+        case 403:
+            return OutageReason.BILLING if "billing" in message else OutageReason.AUTH
+        case 404:
+            return OutageReason.MODEL
+        case 429 if not is_retryable(exc):
+            # Дневная квота, лимит расходов (spend cap) или пауза больше разумной.
+            return OutageReason.QUOTA
+    return None
+
+
+def error_detail(exc: BaseException) -> str:
+    """Короткое описание ошибки для администратора."""
+    if isinstance(exc, errors.APIError):
+        text = f"HTTP {exc.code} {exc.status or ''}: {exc.message or ''}"
+    else:
+        text = f"{type(exc).__name__}: {exc}"
+    return " ".join(text.split())[:DETAIL_MAX_LENGTH]
+
+
 def is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, (TimeoutError, httpx.TransportError)):
+    if isinstance(exc, (TimeoutError, *NETWORK_ERRORS)):
         return True
     if not isinstance(exc, errors.APIError):
         return False
@@ -78,10 +150,15 @@ def is_retryable(exc: BaseException) -> bool:
 
 
 def to_domain_error(exc: BaseException) -> ImageGenerationError:
+    # Сначала причина «для всех»: сетевые ошибки тоже повторяемые, но если они
+    # не прошли и после повторов внутри запроса, дело не в этой задаче.
+    reason = outage_reason(exc)
+    if reason is not None:
+        return GenerationUnavailableError(
+            UNAVAILABLE_MESSAGE, reason=reason, detail=error_detail(exc)
+        )
     if is_retryable(exc):
         return GenerationTemporaryError(TEMPORARY_MESSAGE)
-    if isinstance(exc, errors.APIError) and exc.code in (401, 403, 404, 429):
-        return GenerationUnavailableError(UNAVAILABLE_MESSAGE)
     return ImageGenerationError(GENERIC_MESSAGE)
 
 
@@ -118,7 +195,11 @@ class GeminiImageGenerator(ImageGenerator):
                 # 400 при заданном соотношении — скорее всего, модель перестала его
                 # принимать. Лучше результат без него (пропорции всё равно подгоним
                 # после генерации), чем отказ пользователю.
-                if exc.code != 400 or aspect_ratio is None:
+                if (
+                    exc.code != 400
+                    or aspect_ratio is None
+                    or outage_reason(exc) is not None
+                ):
                     raise
                 logger.warning(
                     "Gemini отклонил aspect_ratio=%s (%s), повторяю без него",
@@ -129,15 +210,36 @@ class GeminiImageGenerator(ImageGenerator):
         except Exception as exc:
             domain_error = to_domain_error(exc)
             if isinstance(domain_error, GenerationUnavailableError):
-                logger.exception(
-                    "Gemini недоступен (модель %s): квота, биллинг, ключ или модель",
+                logger.error(
+                    "Gemini недоступен (модель %s), причина %s: %s",
                     self.name,
+                    domain_error.reason,
+                    domain_error.detail,
                 )
             else:
                 logger.exception("Ошибка запроса к Gemini (модель %s)", self.name)
             raise domain_error from exc
 
         return self._extract_image(response)
+
+    async def check(self) -> None:
+        """Запрос описания модели: бесплатный и без генерации. Проходит тот же
+        путь (прокси → узел → Google) и с тем же ключом, что и генерация."""
+        try:
+            await asyncio.wait_for(
+                self._client.aio.models.get(model=self.name),
+                timeout=CHECK_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            reason = outage_reason(exc)
+            if reason is None and isinstance(exc, TimeoutError):
+                reason = OutageReason.NETWORK
+            if reason is not None:
+                raise GenerationUnavailableError(
+                    UNAVAILABLE_MESSAGE, reason=reason, detail=error_detail(exc)
+                ) from exc
+            # Любой другой ответ Google значит, что связь есть: этого и ждём.
+            logger.info("Проверка Gemini: ответ с ошибкой, но связь есть: %s", exc)
 
     async def _request_with_retries(
         self, contents: list[str | types.Part], aspect_ratio: str | None

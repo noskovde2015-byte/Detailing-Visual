@@ -3,7 +3,11 @@ import { Link } from "react-router";
 
 import { imageUrl, isActive, type FilmFinish, type GenerationParams } from "../api/api";
 import { isApiError } from "../api/client";
-import { useCreateGeneration, useGeneration } from "../api/queries";
+import {
+  useCreateGeneration,
+  useGeneration,
+  useGenerationAvailability,
+} from "../api/queries";
 import { FileDrop, Select, Switch } from "../components/controls";
 import {
   CameraIcon,
@@ -31,6 +35,10 @@ export function CreatePage() {
   const user = useCurrentUser();
   const { openPricing } = usePricing();
   const create = useCreateGeneration();
+  // Генерации на паузе (у Google сбой для всех) — не даём отправить заведомо
+  // не выполнимую задачу. Сервер всё равно проверит сам.
+  const { data: availability } = useGenerationAvailability();
+  const unavailable = availability?.available === false;
 
   const [car, setCar] = useState<File | null>(null);
   const [filmMode, setFilmMode] = useState<FilmMode>("photo");
@@ -538,13 +546,19 @@ export function CreatePage() {
               <span className={styles.muted}>Пока ничего не выбрано</span>
             )}
 
-            {formError && (
+            {formError ? (
               <p className="notice notice-error" role="alert">
                 {formError}
               </p>
+            ) : (
+              unavailable && (
+                <p className={`notice ${styles.unavailable}`} role="status">
+                  {availability.message ?? "Генерация временно недоступна, попробуйте позже."}
+                </p>
+              )
             )}
 
-            <button type="submit" className="btn btn-primary btn-lg" disabled={busy}>
+            <button type="submit" className="btn btn-primary btn-lg" disabled={busy || unavailable}>
               {create.isPending ? "Отправляем…" : running ? "Генерируем…" : "Создать визуализацию"}
             </button>
             <span className={styles.charge}>

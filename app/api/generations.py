@@ -25,6 +25,7 @@ from app.db.db_helper import db_helper
 from app.models.generation import Generation, GenerationStatus
 from app.models.generation_image import ImageRole
 from app.schemas.generation import (
+    GenerationAvailability,
     GenerationList,
     GenerationParams,
     GenerationRead,
@@ -32,7 +33,9 @@ from app.schemas.generation import (
 )
 from app.services.balance import INSUFFICIENT_BALANCE_MESSAGE, InsufficientBalanceError
 from app.services.cleanup import purge_generation_files
+from app.services.generation_pause import PAUSED_MESSAGE, GenerationPause
 from app.services.generation_queue import (
+    ArqGenerationQueue,
     BackgroundGenerationQueue,
     GenerationQueue,
     QueueUnavailableError,
@@ -139,6 +142,28 @@ def get_generation_queue(
 QueueDep = Annotated[GenerationQueue, Depends(get_generation_queue)]
 
 
+def get_generation_pause(queue: QueueDep) -> GenerationPause | None:
+    """Пауза есть только у очереди arq: её состояние живёт в Redis рядом с ней."""
+    if isinstance(queue, ArqGenerationQueue):
+        return GenerationPause(queue.redis, settings.queue.name)
+    return None
+
+
+PauseDep = Annotated[GenerationPause | None, Depends(get_generation_pause)]
+
+
+async def is_generation_paused(pause: GenerationPause | None) -> bool:
+    if pause is None:
+        return False
+    try:
+        return await pause.is_paused()
+    except Exception:
+        # Redis недоступен: о паузе не знаем. Не блокируем — если Redis
+        # действительно лежит, постановка в очередь сама ответит 503.
+        logger.exception("Не удалось проверить паузу генераций")
+        return False
+
+
 @router.post(
     "",
     response_model=GenerationRead,
@@ -150,13 +175,17 @@ QueueDep = Annotated[GenerationQueue, Depends(get_generation_queue)]
             '{"message": "...", "balance": 0}',
         },
         413: {"description": "Файл больше допустимого размера"},
-        503: {"description": "Очередь недоступна, генерация вернулась на баланс"},
+        503: {
+            "description": "Генерации на паузе (баланс не тронут) или очередь "
+            "недоступна (генерация вернулась на баланс)"
+        },
     },
 )
 async def create(
     user: CurrentUser,
     session: SessionDep,
     queue: QueueDep,
+    pause: PauseDep,
     response: Response,
     car: Annotated[UploadFile, File(description="Фото автомобиля")],
     params: Annotated[
@@ -169,6 +198,12 @@ async def create(
     ] = None,
     wheel: Annotated[UploadFile | None, File(description="Фото дисков")] = None,
 ) -> GenerationRead:
+    # До создания генерации: пока стоит пауза, баланс не занимаем вовсе.
+    if await is_generation_paused(pause):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=PAUSED_MESSAGE
+        )
+
     parsed = _parse_params(params)
 
     uploads: dict[ImageRole, UploadFile] = {ImageRole.CAR: car}
@@ -230,6 +265,17 @@ async def create(
         f"/{generation.id}"
     )
     return to_read(generation)
+
+
+@router.get(
+    "/availability",
+    response_model=GenerationAvailability,
+    summary="Можно ли сейчас создать генерацию",
+)
+async def availability(user: CurrentUser, pause: PauseDep) -> GenerationAvailability:
+    if await is_generation_paused(pause):
+        return GenerationAvailability(available=False, message=PAUSED_MESSAGE)
+    return GenerationAvailability(available=True)
 
 
 @router.get("", response_model=GenerationList, summary="Мои генерации")

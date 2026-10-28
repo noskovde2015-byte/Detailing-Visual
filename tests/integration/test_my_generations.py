@@ -68,7 +68,9 @@ class RefusingGenerator(ImageGenerator):
 class IdleQueue(GenerationQueue):
     """Принимает задачу, но не выполняет: генерация остаётся pending."""
 
-    async def enqueue(self, generation_id: uuid.UUID) -> None:
+    async def enqueue(
+        self, generation_id: uuid.UUID, *, tag: str | None = None
+    ) -> None:
         return None
 
 

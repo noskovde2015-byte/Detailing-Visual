@@ -57,6 +57,16 @@
   background: var(--surface-sunken);
 }
 
+/* Красная точка на «Админке»: генерации стоят на паузе. */
+.alertDot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #d2453a;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 .active,
 .active:hover {
   background: var(--inverse);
@@ -230,6 +240,7 @@
   }
 
   .tabIcon {
+    position: relative;
     width: 52px;
     height: 30px;
     display: flex;
@@ -241,6 +252,12 @@
 
   .tabActive {
     color: var(--ink);
+  }
+
+  .tabIcon .alertDot {
+    position: absolute;
+    top: 2px;
+    right: 12px;
   }
 
   .tabActive .tabIcon {

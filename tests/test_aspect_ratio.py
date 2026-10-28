@@ -2,13 +2,18 @@ import io
 from collections.abc import Sequence
 from typing import Any
 
+import httpx
 import pytest
 from google.genai import errors, types
 from PIL import Image
 
 from app.services.aspect_ratio import ImageSize, nearest_aspect_ratio
 from app.services.gemini import GeminiImageGenerator
-from app.services.image_generator import ImageData
+from app.services.image_generator import (
+    GenerationUnavailableError,
+    ImageData,
+    OutageReason,
+)
 from app.services.images import fit_aspect_ratio
 
 
@@ -88,9 +93,17 @@ def anyio_backend() -> str:
 
 
 class _FakeModels:
-    def __init__(self, fail_with_400: bool) -> None:
+    def __init__(self, fail_with_400: bool, error: BaseException | None = None) -> None:
         self.configs: list[types.GenerateContentConfig] = []
         self._fail_with_400 = fail_with_400
+        self._error = error
+        self.get_calls = 0
+
+    async def get(self, *, model: str) -> types.Model:
+        self.get_calls += 1
+        if self._error is not None:
+            raise self._error
+        return types.Model(name=model)
 
     async def generate_content(
         self,
@@ -100,6 +113,8 @@ class _FakeModels:
         config: types.GenerateContentConfig,
     ) -> types.GenerateContentResponse:
         self.configs.append(config)
+        if self._error is not None:
+            raise self._error
         if self._fail_with_400 and config.image_config.aspect_ratio is not None:
             raise errors.APIError(
                 400, {"error": {"code": 400, "message": "bad ratio", "status": "X"}}
@@ -147,3 +162,55 @@ async def test_gemini_retries_without_ratio_on_400() -> None:
     result = await _generator(models).generate("p", [_png(10, 8)], aspect_ratio="5:4")
     assert result.mime_type == "image/png"
     assert [c.image_config.aspect_ratio for c in models.configs] == ["5:4", None]
+
+
+REGION_ERROR = errors.APIError(
+    400,
+    {
+        "error": {
+            "code": 400,
+            "message": "User location is not supported for the API use.",
+            "status": "FAILED_PRECONDITION",
+        }
+    },
+)
+
+
+@pytest.mark.anyio
+async def test_region_error_is_not_retried_without_ratio() -> None:
+    # Повтор без aspect_ratio — только для «плохого параметра». Запрос из
+    # неподдерживаемого региона нельзя слать второй раз.
+    models = _FakeModels(fail_with_400=False, error=REGION_ERROR)
+    with pytest.raises(GenerationUnavailableError) as caught:
+        await _generator(models).generate("p", [_png(10, 8)], aspect_ratio="5:4")
+    assert caught.value.reason is OutageReason.REGION
+    assert len(models.configs) == 1
+
+
+@pytest.mark.anyio
+async def test_check_passes_when_google_answers() -> None:
+    models = _FakeModels(fail_with_400=False)
+    await _generator(models).check()
+    assert models.get_calls == 1
+
+
+@pytest.mark.anyio
+async def test_check_passes_on_unrelated_google_error() -> None:
+    # Google ответил хоть чем-то (500) — значит, связь через узлы есть.
+    error = errors.APIError(500, {"error": {"code": 500, "message": "x"}})
+    await _generator(_FakeModels(fail_with_400=False, error=error)).check()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (httpx.ConnectError("proxy down"), OutageReason.NETWORK),
+        (TimeoutError(), OutageReason.NETWORK),
+        (REGION_ERROR, OutageReason.REGION),
+    ],
+)
+async def test_check_reports_outage(error: BaseException, reason: OutageReason) -> None:
+    with pytest.raises(GenerationUnavailableError) as caught:
+        await _generator(_FakeModels(fail_with_400=False, error=error)).check()
+    assert caught.value.reason is reason

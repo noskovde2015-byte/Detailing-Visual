@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router";
 
-import { imageUrl, type AdminUser, type CreditGrant, type Generation } from "../api/api";
+import {
+  imageUrl,
+  type AdminUser,
+  type CreditGrant,
+  type Generation,
+  type GenerationControl,
+} from "../api/api";
 import {
   ADMIN_PAGE_SIZE,
   useAdminCredits,
@@ -9,11 +15,14 @@ import {
   useAdminUser,
   useAdminUserGenerations,
   useAdminUsers,
+  useGenerationControl,
   useGrantCredits,
+  usePauseGenerations,
+  useResumeGenerations,
   useSetBlocked,
 } from "../api/queries";
 import { CarIcon, SearchIcon } from "../components/icons";
-import { formatDate, formatWhen, generationsCount } from "../lib/format";
+import { formatDate, formatDuration, formatWhen, generationsCount } from "../lib/format";
 import { revealElement } from "../lib/smoothScroll";
 import { useCurrentUser } from "../lib/useCurrentUser";
 import styles from "./AdminPage.module.css";
@@ -60,6 +69,7 @@ export function AdminPage() {
         </div>
       </div>
 
+      <GenerationControlCard />
       <Stats />
 
       <div className={styles.columns}>
@@ -105,6 +115,183 @@ export function AdminPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+// ---------- пауза генераций ----------
+
+type Notice = { kind: "ok" | "error"; text: string };
+
+/**
+ * Идут ли генерации. Если Google отказал всем (регион, оплата, ключ) или нет
+ * связи с узлами, воркер ставит генерации на паузу: здесь видно почему,
+ * что сделать и сколько генераций ждёт. Опрашивается каждые 15 секунд.
+ */
+function GenerationControlCard() {
+  const { data, isError, dataUpdatedAt } = useGenerationControl({ intervalMs: 15_000 });
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  if (isError) {
+    return <p className="notice notice-error">Не удалось узнать, идут ли генерации</p>;
+  }
+  // В режиме разработки (очередь background) паузы нет — и показывать нечего.
+  if (!data || !data.supported) return null;
+
+  return data.paused ? (
+    <PausedCard control={data} now={dataUpdatedAt} notice={notice} onNotice={setNotice} />
+  ) : (
+    <RunningCard control={data} notice={notice} onNotice={setNotice} />
+  );
+}
+
+function RunningCard({
+  control,
+  notice,
+  onNotice,
+}: {
+  control: GenerationControl;
+  notice: Notice | null;
+  onNotice: (notice: Notice | null) => void;
+}) {
+  const pause = usePauseGenerations();
+  const [confirming, setConfirming] = useState(false);
+
+  async function apply() {
+    try {
+      await pause.mutateAsync(null);
+      onNotice(null);
+    } catch (error) {
+      onNotice({ kind: "error", text: error instanceof Error ? error.message : "Ошибка" });
+    }
+    setConfirming(false);
+  }
+
+  return (
+    <section aria-label="Состояние генераций" className={`card ${styles.control}`}>
+      <div className={styles.controlHead}>
+        <span className={`${styles.controlDot} ${styles.controlDotOk}`} aria-hidden="true" />
+        <div className={styles.controlText}>
+          <b>Генерации идут</b>
+          <span className={styles.muted}>
+            {control.pending_count
+              ? `В очереди: ${generationsCount(control.pending_count)}`
+              : "Очередь пуста"}
+          </span>
+        </div>
+        {!confirming && (
+          <button type="button" className="btn btn-secondary" onClick={() => setConfirming(true)}>
+            Приостановить
+          </button>
+        )}
+      </div>
+      {confirming && (
+        <div className={styles.controlConfirm}>
+          <span>
+            Новые генерации перестанут приниматься, уже созданные будут ждать. Баланс
+            пользователей не пострадает.
+          </span>
+          <div className={styles.formButtons}>
+            <button type="button" className="btn btn-secondary" onClick={() => setConfirming(false)}>
+              Отмена
+            </button>
+            <button type="button" className="btn btn-danger" disabled={pause.isPending} onClick={apply}>
+              Приостановить
+            </button>
+          </div>
+        </div>
+      )}
+      {notice && <ControlNotice notice={notice} />}
+    </section>
+  );
+}
+
+function PausedCard({
+  control,
+  now,
+  notice,
+  onNotice,
+}: {
+  control: GenerationControl;
+  now: number;
+  notice: Notice | null;
+  onNotice: (notice: Notice | null) => void;
+}) {
+  const resume = useResumeGenerations();
+
+  async function apply() {
+    try {
+      const result = await resume.mutateAsync(undefined);
+      onNotice({
+        kind: "ok",
+        text:
+          (result.requeued
+            ? `Возобновлено, в очередь вернулось: ${generationsCount(result.requeued)}.`
+            : "Возобновлено.") +
+          " Если причина не устранена, первая же генерация снова поставит паузу — " +
+          "пользователи при этом ничего не потеряют.",
+      });
+    } catch (error) {
+      onNotice({ kind: "error", text: error instanceof Error ? error.message : "Ошибка" });
+    }
+  }
+
+  const since = control.since ? new Date(control.since).getTime() : now;
+  const refundIn = control.oldest_pending_at
+    ? new Date(control.oldest_pending_at).getTime() +
+      control.pending_timeout_minutes * 60_000 -
+      now
+    : null;
+
+  return (
+    <section aria-label="Генерации на паузе" className={`card ${styles.control} ${styles.controlPaused}`}>
+      <div className={styles.controlHead}>
+        <span className={`${styles.controlDot} ${styles.controlDotStop}`} aria-hidden="true" />
+        <div className={styles.controlText}>
+          <b>Генерации на паузе: {control.title ?? "причина неизвестна"}</b>
+          <span className={styles.controlMeta}>
+            Стоят {formatDuration(now - since)}
+            {control.since && ` · начало: ${formatWhen(control.since).toLowerCase()}`}
+            {control.paused_by && ` · поставил ${control.paused_by}`}
+          </span>
+        </div>
+      </div>
+
+      {control.hint && <p className={styles.controlHint}>{control.hint}</p>}
+
+      <p className={styles.controlQueue}>
+        {control.pending_count === 0
+          ? "Ждущих генераций нет. Новые не принимаются, баланс пользователей не тронут."
+          : `Ждут: ${generationsCount(control.pending_count)}. ` +
+            (refundIn !== null && refundIn > 0
+              ? `Если пауза продлится, первые вернутся на баланс через ${formatDuration(refundIn)}.`
+              : "Если пауза продлится, они вернутся на баланс в ближайшие минуты.")}
+      </p>
+
+      {control.detail && (
+        <details className={styles.controlDetail}>
+          <summary>{control.reason === "manual" ? "Комментарий" : "Последняя ошибка"}</summary>
+          <code>{control.detail}</code>
+        </details>
+      )}
+
+      <div className={styles.controlActions}>
+        <button type="button" className="btn btn-primary" disabled={resume.isPending} onClick={apply}>
+          {resume.isPending ? "Возобновляем…" : "Возобновить"}
+        </button>
+        {control.auto_resume && (
+          <span className={styles.muted}>Связь проверяется раз в минуту — возобновится само</span>
+        )}
+      </div>
+      {notice && <ControlNotice notice={notice} />}
+    </section>
+  );
+}
+
+function ControlNotice({ notice }: { notice: Notice }) {
+  return (
+    <p role="status" className={`notice ${notice.kind === "ok" ? "notice-success" : "notice-error"}`}>
+      {notice.text}
+    </p>
   );
 }
 

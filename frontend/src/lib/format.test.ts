@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatWhen, generationsCount, plural } from "./format";
+import { formatDuration, formatWhen, generationsCount, plural } from "./format";
 
 describe("plural", () => {
   const forms = ["генерация", "генерации", "генераций"] as const;
@@ -35,5 +35,18 @@ describe("formatWhen", () => {
 
   it("раньше — датой", () => {
     expect(formatWhen(new Date(2026, 9, 20, 10, 15).toISOString(), now)).toMatch(/^20 октября/);
+  });
+});
+
+describe("formatDuration", () => {
+  it.each([
+    [-5_000, "меньше минуты"],
+    [59_000, "меньше минуты"],
+    [60_000, "1 мин"],
+    [35 * 60_000, "35 мин"],
+    [60 * 60_000, "1 ч"],
+    [130 * 60_000, "2 ч 10 мин"],
+  ])("%i мс → %s", (ms, expected) => {
+    expect(formatDuration(ms)).toBe(expected);
   });
 });

@@ -223,7 +223,9 @@ async def test_queue_unavailable_returns_503_and_refunds(
     client: AsyncClient, make_user
 ) -> None:
     class BrokenQueue(GenerationQueue):
-        async def enqueue(self, generation_id: uuid.UUID) -> None:
+        async def enqueue(
+            self, generation_id: uuid.UUID, *, tag: str | None = None
+        ) -> None:
             raise QueueUnavailableError("redis is down")
 
     app.dependency_overrides[generations_api.get_generation_queue] = BrokenQueue

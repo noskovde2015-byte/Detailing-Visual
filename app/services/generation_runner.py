@@ -2,9 +2,10 @@ import asyncio
 import enum
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.generation import Generation, GenerationStatus
@@ -12,6 +13,7 @@ from app.models.generation_image import INPUT_ROLES, GenerationImage, ImageRole
 from app.schemas.generation import GenerationParams
 from app.services.image_generator import (
     GenerationTemporaryError,
+    GenerationUnavailableError,
     ImageData,
     ImageGenerationError,
     ImageGenerator,
@@ -45,6 +47,12 @@ class GenerationOutcome(enum.StrEnum):
     """Временный сбой: задача возвращена в pending, её нужно перезапустить позже."""
     SKIPPED = "skipped"
     """Задачу уже взял другой исполнитель или она завершена."""
+    PAUSED = "paused"
+    """Генерация недоступна для всех: задача возвращена в pending и ждёт
+    снятия паузы. Её заново поставят в очередь при возобновлении."""
+
+
+OutageHandler = Callable[[GenerationUnavailableError], Awaitable[object]]
 
 
 def _now() -> datetime:
@@ -117,6 +125,7 @@ async def run_generation(
     storage: Storage,
     timeout_seconds: float | None = None,
     allow_retry: bool = False,
+    on_outage: OutageHandler | None = None,
 ) -> GenerationOutcome:
     """Выполняет одну генерацию. Безопасно вызывать повторно для той же задачи.
 
@@ -125,6 +134,9 @@ async def run_generation(
     вместо того, чтобы сразу пометить её неудачной. Повтор планирует вызывающий.
     При отмене (остановка воркера) задача возвращается в pending, а отмена
     пробрасывается дальше: очередь запустит её снова.
+    on_outage: что делать, если генерация недоступна для всех (регион, оплата,
+    связь). С ним задача возвращается в pending и ждёт (исход PAUSED), а
+    обработчик ставит паузу. Без него (режим разработки) — задача неудачна.
     """
     claimed = False
     saved_keys: list[str] = []
@@ -186,6 +198,20 @@ async def run_generation(
             await asyncio.shield(_cleanup(storage, saved_keys))
             await asyncio.shield(_release(session_factory, generation_id))
         raise
+    except GenerationUnavailableError as exc:
+        await _cleanup(storage, saved_keys)
+        if on_outage is not None:
+            logger.warning(
+                "Генерация %s ждёт: генерация недоступна (%s)",
+                generation_id,
+                exc.reason,
+            )
+            await _release(session_factory, generation_id)
+            await on_outage(exc)
+            return GenerationOutcome.PAUSED
+        logger.warning("Генерация %s не удалась: %s", generation_id, exc)
+        await mark_failed(session_factory, generation_id, str(exc))
+        return GenerationOutcome.FAILED
     except GenerationTemporaryError as exc:
         await _cleanup(storage, saved_keys)
         if allow_retry:
@@ -255,33 +281,43 @@ async def fail_stale_generations(
     *,
     pending_older_than: timedelta,
     processing_older_than: timedelta,
+    pending_error: str = INTERRUPTED_ERROR,
 ) -> int:
     """Помечает failed задачи, которые зависли: исполнитель упал посреди работы
     или задача потерялась по пути в очередь.
 
     Пороги разные: pending честно ждёт своей очереди, когда воркер загружен,
     а processing дольше таймаута задачи означает, что исполнитель умер.
+    pending_error — текст для ждавших в очереди (например, если генерации
+    стояли на паузе, это не «прервана», а «сервис недоступен»).
     """
     now = _now()
+    stale = (
+        (
+            GenerationStatus.PENDING,
+            Generation.created_at < now - pending_older_than,
+            pending_error,
+        ),
+        (
+            GenerationStatus.PROCESSING,
+            Generation.started_at < now - processing_older_than,
+            INTERRUPTED_ERROR,
+        ),
+    )
+    failed_ids: list[uuid.UUID] = []
     async with session_factory() as session:
-        result = await session.execute(
-            update(Generation)
-            .where(
-                or_(
-                    (Generation.status == GenerationStatus.PENDING.value)
-                    & (Generation.created_at < now - pending_older_than),
-                    (Generation.status == GenerationStatus.PROCESSING.value)
-                    & (Generation.started_at < now - processing_older_than),
+        for status, too_old, message in stale:
+            result = await session.execute(
+                update(Generation)
+                .where(Generation.status == status.value, too_old)
+                .values(
+                    status=GenerationStatus.FAILED.value,
+                    error=message,
+                    finished_at=now,
                 )
+                .returning(Generation.id)
             )
-            .values(
-                status=GenerationStatus.FAILED.value,
-                error=INTERRUPTED_ERROR,
-                finished_at=now,
-            )
-            .returning(Generation.id)
-        )
-        failed_ids = list(result.scalars())
+            failed_ids.extend(result.scalars())
         await session.commit()
 
     if failed_ids:

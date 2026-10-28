@@ -5,8 +5,14 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import CurrentAdmin, SessionDep
-from app.api.generations import IMAGE_RESPONSES, generation_image_response
+from app.api.generations import (
+    IMAGE_RESPONSES,
+    PauseDep,
+    QueueDep,
+    generation_image_response,
+)
 from app.core.config import settings
+from app.db.db_helper import db_helper
 from app.models.credit_grant import CreditGrant
 from app.models.generation_image import ImageRole
 from app.models.user import User
@@ -18,6 +24,9 @@ from app.schemas.admin import (
     CreditGrantCreate,
     CreditGrantList,
     CreditGrantRead,
+    GenerationControlRead,
+    GenerationPauseCreate,
+    GenerationResumeRead,
     GrantAuthor,
 )
 from app.schemas.generation import GenerationList, GenerationRead
@@ -30,11 +39,18 @@ from app.services.admin import (
 )
 from app.services.balance import InsufficientBalanceError
 from app.services.credits import grant_credits, list_grants
+from app.services.generation_pause import (
+    OUTAGE_TEXTS,
+    GenerationPause,
+    pending_summary,
+    resume_generations,
+)
 from app.services.generations import (
     get_generation,
     list_user_generations,
     to_read,
 )
+from app.services.image_generator import OutageReason
 from app.services.users import get_user_by_id
 
 logger = logging.getLogger(__name__)
@@ -80,6 +96,103 @@ async def _user_read(session: SessionDep, user_id: uuid.UUID) -> AdminUserRead:
 @router.get("/stats", response_model=AdminStats, summary="Сводка")
 async def stats(admin: CurrentAdmin, session: SessionDep) -> AdminStats:
     return await get_stats(session)
+
+
+async def _control_read(
+    session: SessionDep, pause: GenerationPause | None
+) -> GenerationControlRead:
+    pending_count, oldest_pending_at = await pending_summary(session)
+    common = {
+        "pending_count": pending_count,
+        "oldest_pending_at": oldest_pending_at,
+        "pending_timeout_minutes": settings.queue.stale_pending_minutes,
+    }
+    if pause is None:
+        return GenerationControlRead(supported=False, paused=False, **common)
+
+    state = await pause.get()
+    if state is None:
+        return GenerationControlRead(supported=True, paused=False, **common)
+
+    text = OUTAGE_TEXTS[state.reason]
+    return GenerationControlRead(
+        supported=True,
+        paused=True,
+        reason=state.reason,
+        title=text.title,
+        hint=text.hint,
+        detail=state.detail or None,
+        since=state.since,
+        last_error_at=state.last_error_at,
+        paused_by=state.paused_by,
+        auto_resume=state.reason.auto_resume,
+        **common,
+    )
+
+
+def _require_pause(pause: GenerationPause | None) -> GenerationPause:
+    if pause is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Пауза работает только с очередью arq (APP_CONFIG__QUEUE__BACKEND)",
+        )
+    return pause
+
+
+@router.get(
+    "/generation-status",
+    response_model=GenerationControlRead,
+    summary="Идут ли генерации",
+)
+async def generation_status(
+    admin: CurrentAdmin, session: SessionDep, pause: PauseDep
+) -> GenerationControlRead:
+    return await _control_read(session, pause)
+
+
+@router.post(
+    "/generation-status/pause",
+    response_model=GenerationControlRead,
+    summary="Приостановить генерации",
+)
+async def generation_pause(
+    payload: GenerationPauseCreate,
+    admin: CurrentAdmin,
+    session: SessionDep,
+    pause: PauseDep,
+) -> GenerationControlRead:
+    active = _require_pause(pause)
+    state = await active.get()
+    if state is None:
+        await active.pause(
+            OutageReason.MANUAL, payload.comment or "", paused_by=admin.email
+        )
+        logger.warning("Админ %s приостановил генерации", admin.email)
+    return await _control_read(session, active)
+
+
+@router.post(
+    "/generation-status/resume",
+    response_model=GenerationResumeRead,
+    summary="Возобновить генерации",
+    responses={409: {"description": "Генерации не на паузе"}},
+)
+async def generation_resume(
+    admin: CurrentAdmin, session: SessionDep, pause: PauseDep, queue: QueueDep
+) -> GenerationResumeRead:
+    """Снимает паузу и возвращает в очередь все ждущие генерации.
+
+    Если причина не устранена, первая же генерация снова поставит паузу,
+    а сама вернётся ждать — пользователь ничего не потеряет.
+    """
+    active = _require_pause(pause)
+    if await active.get() is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Генерации и так идут")
+    requeued = await resume_generations(active, db_helper.session_factory, queue)
+    logger.warning("Админ %s возобновил генерации", admin.email)
+    return GenerationResumeRead(
+        requeued=requeued, status=await _control_read(session, active)
+    )
 
 
 @router.get("/users", response_model=AdminUserList, summary="Пользователи")

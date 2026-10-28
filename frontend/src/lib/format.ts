@@ -45,3 +45,13 @@ const rub = new Intl.NumberFormat("ru-RU");
 export function formatRub(value: number): string {
   return `${rub.format(value)} ₽`;
 }
+
+/** Длительность для людей: «меньше минуты», «35 мин», «2 ч 10 мин», «3 ч». */
+export function formatDuration(ms: number): string {
+  const minutes = Math.floor(Math.max(ms, 0) / 60_000);
+  if (minutes < 1) return "меньше минуты";
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+}

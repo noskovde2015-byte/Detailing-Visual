@@ -4,6 +4,63 @@
  */
 
 export interface paths {
+    "/api/admin/generation-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Идут ли генерации */
+        get: operations["generation_status_api_admin_generation_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/generation-status/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Приостановить генерации */
+        post: operations["generation_pause_api_admin_generation_status_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/generation-status/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Возобновить генерации
+         * @description Снимает паузу и возвращает в очередь все ждущие генерации.
+         *
+         *     Если причина не устранена, первая же генерация снова поставит паузу,
+         *     а сама вернётся ждать — пользователь ничего не потеряет.
+         */
+        post: operations["generation_resume_api_admin_generation_status_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/generations/{generation_id}": {
         parameters: {
             query?: never;
@@ -228,6 +285,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/generations/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Можно ли сейчас создать генерацию */
+        get: operations["availability_api_generations_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/generations/{generation_id}": {
         parameters: {
             query?: never;
@@ -437,6 +511,69 @@ export interface components {
          * @enum {string}
          */
         FilmFinish: "glossy" | "matte" | "satin" | "metallic";
+        /** GenerationAvailability */
+        GenerationAvailability: {
+            /** Available */
+            available: boolean;
+            /**
+             * Message
+             * @description Почему недоступна. Показывать пользователю
+             */
+            message?: string | null;
+        };
+        /**
+         * GenerationControlRead
+         * @description Идут ли генерации. Если нет — почему и что делать.
+         */
+        GenerationControlRead: {
+            /**
+             * Auto Resume
+             * @description Возобновятся сами, когда вернётся связь
+             * @default false
+             */
+            auto_resume: boolean;
+            /**
+             * Detail
+             * @description Последняя ошибка Google
+             */
+            detail?: string | null;
+            /**
+             * Hint
+             * @description Что сделать администратору
+             */
+            hint?: string | null;
+            /** Last Error At */
+            last_error_at?: string | null;
+            /** Oldest Pending At */
+            oldest_pending_at?: string | null;
+            /** Paused */
+            paused: boolean;
+            /** Paused By */
+            paused_by?: string | null;
+            /**
+             * Pending Count
+             * @description Сколько генераций ждёт
+             */
+            pending_count: number;
+            /**
+             * Pending Timeout Minutes
+             * @description Через сколько минут ожидания генерация вернётся на баланс
+             */
+            pending_timeout_minutes: number;
+            reason?: components["schemas"]["OutageReason"] | null;
+            /**
+             * Since
+             * @description Когда встали
+             */
+            since?: string | null;
+            /**
+             * Supported
+             * @description false — очередь в режиме разработки (background), паузы нет
+             */
+            supported: boolean;
+            /** Title */
+            title?: string | null;
+        };
         /** GenerationList */
         GenerationList: {
             /** Items */
@@ -470,6 +607,11 @@ export interface components {
              */
             tint: boolean;
             wheels?: components["schemas"]["WheelParams"] | null;
+        };
+        /** GenerationPauseCreate */
+        GenerationPauseCreate: {
+            /** Comment */
+            comment?: string | null;
         };
         /** GenerationRead */
         GenerationRead: {
@@ -507,6 +649,15 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** GenerationResumeRead */
+        GenerationResumeRead: {
+            /**
+             * Requeued
+             * @description Сколько ждущих генераций вернулось в очередь
+             */
+            requeued: number;
+            status: components["schemas"]["GenerationControlRead"];
+        };
         /**
          * GenerationStatus
          * @enum {string}
@@ -534,6 +685,12 @@ export interface components {
          * @enum {string}
          */
         ImageRole: "car" | "film" | "wheel" | "result" | "preview";
+        /**
+         * OutageReason
+         * @description Почему генерация недоступна для всех, а не для одной задачи.
+         * @enum {string}
+         */
+        OutageReason: "region" | "billing" | "quota" | "auth" | "model" | "network" | "manual";
         /** UserRead */
         UserRead: {
             /** Balance */
@@ -584,6 +741,86 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    generation_status_api_admin_generation_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationControlRead"];
+                };
+            };
+        };
+    };
+    generation_pause_api_admin_generation_status_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationPauseCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationControlRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generation_resume_api_admin_generation_status_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationResumeRead"];
+                };
+            };
+            /** @description Генерации не на паузе */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     generation_detail_api_admin_generations__generation_id__get: {
         parameters: {
             query?: never;
@@ -1053,12 +1290,32 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Очередь недоступна, генерация вернулась на баланс */
+            /** @description Генерации на паузе (баланс не тронут) или очередь недоступна (генерация вернулась на баланс) */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    availability_api_generations_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationAvailability"];
+                };
             };
         };
     };

@@ -22,8 +22,10 @@ from app.services.generation_runner import (
 from app.services.generations import create_generation
 from app.services.image_generator import (
     GenerationTemporaryError,
+    GenerationUnavailableError,
     ImageData,
     ImageGenerator,
+    OutageReason,
 )
 from app.services.images import process_upload
 from app.services.storage import LocalStorage
@@ -42,6 +44,23 @@ class TemporaryFailure(ImageGenerator):
         aspect_ratio: str | None = None,
     ) -> ImageData:
         raise GenerationTemporaryError("Сервис генерации временно перегружен.")
+
+
+class Outage(ImageGenerator):
+    name = "outage"
+
+    async def generate(
+        self,
+        prompt: str,
+        images: Sequence[ImageData],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> ImageData:
+        raise GenerationUnavailableError(
+            "Сервис генерации временно недоступен.",
+            reason=OutageReason.BILLING,
+            detail="HTTP 402",
+        )
 
 
 class Slow(ImageGenerator):
@@ -189,3 +208,46 @@ async def test_stale_thresholds_differ_for_pending_and_processing(
     generation = await _get(generation_id)
     assert generation.status == GenerationStatus.FAILED
     assert generation.error == INTERRUPTED_ERROR
+
+
+async def test_outage_keeps_generation_waiting(
+    generation_id: uuid.UUID, storage: LocalStorage
+) -> None:
+    outages: list[GenerationUnavailableError] = []
+
+    async def on_outage(exc: GenerationUnavailableError) -> None:
+        outages.append(exc)
+
+    outcome = await _run(generation_id, Outage(), storage, on_outage=on_outage)
+
+    assert outcome is GenerationOutcome.PAUSED
+    assert [exc.reason for exc in outages] == [OutageReason.BILLING]
+    generation = await _get(generation_id)
+    assert generation.status == GenerationStatus.PENDING
+    assert generation.started_at is None
+    assert generation.error is None
+
+
+async def test_outage_without_handler_fails(
+    generation_id: uuid.UUID, storage: LocalStorage
+) -> None:
+    # Режим разработки (без очереди arq): паузы нет, задача просто неудачна.
+    outcome = await _run(generation_id, Outage(), storage)
+
+    assert outcome is GenerationOutcome.FAILED
+    assert (await _get(generation_id)).status == GenerationStatus.FAILED
+
+
+async def test_stale_pending_gets_given_message(
+    generation_id: uuid.UUID, storage: LocalStorage
+) -> None:
+    failed = await fail_stale_generations(
+        db_helper.session_factory,
+        pending_older_than=timedelta(0),
+        processing_older_than=timedelta(hours=1),
+        pending_error="сервис недоступен",
+    )
+    assert failed == 1
+    generation = await _get(generation_id)
+    assert generation.status == GenerationStatus.FAILED
+    assert generation.error == "сервис недоступен"

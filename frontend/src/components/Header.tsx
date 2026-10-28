@@ -1,6 +1,7 @@
 import { Link, NavLink } from "react-router";
 
 import type { User } from "../api/api";
+import { useGenerationControl } from "../api/queries";
 import logo from "../assets/logo.png";
 import { GENERATION_FORMS, generationsCount, plural } from "../lib/format";
 import { setThemePreference, useTheme } from "../lib/theme";
@@ -42,6 +43,14 @@ export function Header({ user }: { user: User }) {
   const { theme } = useTheme();
   const nextTheme = theme === "dark" ? "light" : "dark";
   const items = navItems(user);
+  // Админ должен узнать о паузе генераций, где бы он ни был на сайте.
+  const control = useGenerationControl({ enabled: user.is_admin, intervalMs: 60_000 });
+  const alertOn = (to: string) => to === "/admin" && control.data?.paused === true;
+  const alertDot = (
+    <span className={styles.alertDot} title="Генерации на паузе">
+      <span className="sr-only">: генерации на паузе</span>
+    </span>
+  );
 
   return (
     <>
@@ -61,6 +70,7 @@ export function Header({ user }: { user: User }) {
               >
                 {to === "/admin" && <Icon size={14} />}
                 {label}
+                {alertOn(to) && alertDot}
               </NavLink>
             ))}
           </nav>
@@ -111,6 +121,7 @@ export function Header({ user }: { user: User }) {
           >
             <span className={styles.tabIcon}>
               <Icon size={22} />
+              {alertOn(to) && alertDot}
             </span>
             {short}
           </NavLink>

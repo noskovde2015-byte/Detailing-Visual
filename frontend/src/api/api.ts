@@ -13,6 +13,9 @@ export type AdminUser = Schemas["AdminUserRead"];
 export type AdminUserList = Schemas["AdminUserList"];
 export type CreditGrant = Schemas["CreditGrantRead"];
 export type CreditGrantList = Schemas["CreditGrantList"];
+export type GenerationAvailability = Schemas["GenerationAvailability"];
+export type GenerationControl = Schemas["GenerationControlRead"];
+export type GenerationResume = Schemas["GenerationResumeRead"];
 
 export type GenerationStatus = "pending" | "processing" | "done" | "failed";
 export type ImageRole = "car" | "film" | "wheel" | "result" | "preview";
@@ -68,6 +71,9 @@ export const listGenerations = (args: {
   status?: GenerationStatus | null;
 }) => request<GenerationList>(`/api/generations${query(args)}`);
 
+export const getGenerationAvailability = () =>
+  request<GenerationAvailability>("/api/generations/availability");
+
 export const deleteGeneration = (id: string) =>
   request<void>(`/api/generations/${id}`, { method: "DELETE" });
 
@@ -106,3 +112,17 @@ export const grantCredits = (id: string, amount: number, reason: string | null) 
 
 export const listUserGenerations = (id: string, limit = 6) =>
   request<GenerationList>(`/api/admin/users/${id}/generations${query({ limit, offset: 0 })}`);
+
+// Пауза генераций: Google отказал всем (регион, оплата, ключ) или нет связи.
+
+export const getGenerationControl = () =>
+  request<GenerationControl>("/api/admin/generation-status");
+
+export const pauseGenerations = (comment: string | null) =>
+  request<GenerationControl>("/api/admin/generation-status/pause", {
+    method: "POST",
+    json: { comment },
+  });
+
+export const resumeGenerations = () =>
+  request<GenerationResume>("/api/admin/generation-status/resume", { method: "POST" });

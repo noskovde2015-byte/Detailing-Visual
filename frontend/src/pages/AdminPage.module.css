@@ -14,6 +14,108 @@
   color: var(--muted);
 }
 
+/* ---------- пауза генераций ---------- */
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border-radius: var(--radius-lg);
+}
+
+.controlPaused {
+  border: 1px solid var(--danger-line);
+  background: linear-gradient(var(--danger-soft), var(--danger-soft)), var(--surface);
+}
+
+.controlHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.controlDot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.controlDotOk {
+  background: #2e8b57;
+  box-shadow: 0 0 0 4px rgba(46, 139, 87, 0.15);
+}
+
+.controlDotStop {
+  background: #d2453a;
+  box-shadow: 0 0 0 4px rgba(210, 69, 58, 0.18);
+}
+
+.controlText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.controlMeta {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.controlHint,
+.controlQueue {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.controlHint {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.controlDetail {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.controlDetail summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.controlDetail code {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.controlActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.controlConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+  max-width: 520px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -468,6 +570,15 @@
 
   .lead {
     font-size: 14px;
+  }
+
+  .control {
+    padding: 14px 16px;
+  }
+
+  /* Кнопка «Возобновить» во всю ширину — под большой палец. */
+  .controlActions :global(.btn) {
+    width: 100%;
   }
 
   /* Сводка 2×2 вместо четырёх карточек во весь экран. */

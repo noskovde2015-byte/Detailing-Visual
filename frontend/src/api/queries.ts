@@ -12,12 +12,14 @@ export const queryKeys = {
   me: ["me"] as const,
   generation: (id: string) => ["generation", id] as const,
   generations: ["generations"] as const,
+  generationAvailability: ["generation-availability"] as const,
   generationList: (status: api.GenerationStatus | null, limit: number) =>
     ["generations", "list", status, limit] as const,
   generationTotal: (status: api.GenerationStatus | null) =>
     ["generations", "total", status] as const,
   admin: ["admin"] as const,
   adminStats: ["admin", "stats"] as const,
+  adminGenerationControl: ["admin", "generation-control"] as const,
   adminUsers: (search: string, offset: number) => ["admin", "users", search, offset] as const,
   adminUser: (id: string) => ["admin", "user", id] as const,
   adminCredits: (id: string) => ["admin", "credits", id] as const,
@@ -26,6 +28,8 @@ export const queryKeys = {
 
 /** Как часто опрашивать генерацию, пока она в очереди или выполняется. */
 const POLL_INTERVAL_MS = 2000;
+/** Как часто проверять, не встали ли генерации (и не пошли ли снова). */
+const AVAILABILITY_INTERVAL_MS = 60_000;
 
 export function useMe() {
   return useQuery({
@@ -71,11 +75,26 @@ export function useCreateGeneration() {
     onSuccess: (generation) => {
       client.setQueryData(queryKeys.generation(generation.id), generation);
     },
+    onError: (error) => {
+      // 503 — генерации на паузе: обновить плашку, а не ждать минуту.
+      if (isApiError(error, 503)) {
+        void client.invalidateQueries({ queryKey: queryKeys.generationAvailability });
+      }
+    },
     onSettled: () => {
       // Баланс уменьшился (или вернулся при ошибке), список проектов изменился.
       void client.invalidateQueries({ queryKey: queryKeys.me });
       void client.invalidateQueries({ queryKey: queryKeys.generations });
     },
+  });
+}
+
+export function useGenerationAvailability() {
+  return useQuery({
+    queryKey: queryKeys.generationAvailability,
+    queryFn: api.getGenerationAvailability,
+    refetchInterval: AVAILABILITY_INTERVAL_MS,
+    staleTime: 15_000,
   });
 }
 
@@ -165,4 +184,38 @@ export function useSetBlocked(userId: string) {
     mutationFn: (isBlocked: boolean) => api.setUserBlocked(userId, isBlocked),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.admin }),
   });
+}
+
+/**
+ * Идут ли генерации. intervalMs — как часто опрашивать: в админке чаще,
+ * в шапке (точка на «Админке») — раз в минуту.
+ */
+export function useGenerationControl(options: { enabled?: boolean; intervalMs: number }) {
+  return useQuery({
+    queryKey: queryKeys.adminGenerationControl,
+    queryFn: api.getGenerationControl,
+    enabled: options.enabled ?? true,
+    refetchInterval: options.intervalMs,
+  });
+}
+
+function useGenerationControlMutation<T, A>(mutationFn: (arg: A) => Promise<T>) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSettled: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.admin }),
+        client.invalidateQueries({ queryKey: queryKeys.generationAvailability }),
+      ]);
+    },
+  });
+}
+
+export function usePauseGenerations() {
+  return useGenerationControlMutation((comment: string | null) => api.pauseGenerations(comment));
+}
+
+export function useResumeGenerations() {
+  return useGenerationControlMutation(() => api.resumeGenerations());
 }

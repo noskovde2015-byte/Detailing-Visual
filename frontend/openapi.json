@@ -323,6 +323,162 @@
         "title": "FilmFinish",
         "type": "string"
       },
+      "GenerationAvailability": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Почему недоступна. Показывать пользователю",
+            "title": "Message"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "GenerationAvailability",
+        "type": "object"
+      },
+      "GenerationControlRead": {
+        "description": "Идут ли генерации. Если нет — почему и что делать.",
+        "properties": {
+          "auto_resume": {
+            "default": false,
+            "description": "Возобновятся сами, когда вернётся связь",
+            "title": "Auto Resume",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Последняя ошибка Google",
+            "title": "Detail"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Что сделать администратору",
+            "title": "Hint"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "paused_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused By"
+          },
+          "pending_count": {
+            "description": "Сколько генераций ждёт",
+            "title": "Pending Count",
+            "type": "integer"
+          },
+          "pending_timeout_minutes": {
+            "description": "Через сколько минут ожидания генерация вернётся на баланс",
+            "title": "Pending Timeout Minutes",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutageReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Когда встали",
+            "title": "Since"
+          },
+          "supported": {
+            "description": "false — очередь в режиме разработки (background), паузы нет",
+            "title": "Supported",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "supported",
+          "paused",
+          "pending_count",
+          "pending_timeout_minutes"
+        ],
+        "title": "GenerationControlRead",
+        "type": "object"
+      },
       "GenerationList": {
         "properties": {
           "items": {
@@ -417,6 +573,25 @@
           }
         },
         "title": "GenerationParams",
+        "type": "object"
+      },
+      "GenerationPauseCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "title": "GenerationPauseCreate",
         "type": "object"
       },
       "GenerationRead": {
@@ -532,6 +707,24 @@
         "title": "GenerationRead",
         "type": "object"
       },
+      "GenerationResumeRead": {
+        "properties": {
+          "requeued": {
+            "description": "Сколько ждущих генераций вернулось в очередь",
+            "title": "Requeued",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GenerationControlRead"
+          }
+        },
+        "required": [
+          "requeued",
+          "status"
+        ],
+        "title": "GenerationResumeRead",
+        "type": "object"
+      },
       "GenerationStatus": {
         "enum": [
           "pending",
@@ -602,6 +795,20 @@
           "preview"
         ],
         "title": "ImageRole",
+        "type": "string"
+      },
+      "OutageReason": {
+        "description": "Почему генерация недоступна для всех, а не для одной задачи.",
+        "enum": [
+          "region",
+          "billing",
+          "quota",
+          "auth",
+          "model",
+          "network",
+          "manual"
+        ],
+        "title": "OutageReason",
         "type": "string"
       },
       "UserRead": {
@@ -722,6 +929,93 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/generation-status": {
+      "get": {
+        "operationId": "generation_status_api_admin_generation_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationControlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Идут ли генерации",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/generation-status/pause": {
+      "post": {
+        "operationId": "generation_pause_api_admin_generation_status_pause_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationPauseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationControlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Приостановить генерации",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/generation-status/resume": {
+      "post": {
+        "description": "Снимает паузу и возвращает в очередь все ждущие генерации.\n\nЕсли причина не устранена, первая же генерация снова поставит паузу,\nа сама вернётся ждать — пользователь ничего не потеряет.",
+        "operationId": "generation_resume_api_admin_generation_status_resume_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResumeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Генерации не на паузе"
+          }
+        },
+        "summary": "Возобновить генерации",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/generations/{generation_id}": {
       "get": {
         "operationId": "generation_detail_api_admin_generations__generation_id__get",
@@ -1391,10 +1685,31 @@
             "description": "Validation Error"
           },
           "503": {
-            "description": "Очередь недоступна, генерация вернулась на баланс"
+            "description": "Генерации на паузе (баланс не тронут) или очередь недоступна (генерация вернулась на баланс)"
           }
         },
         "summary": "Создать генерацию",
+        "tags": [
+          "generations"
+        ]
+      }
+    },
+    "/api/generations/availability": {
+      "get": {
+        "operationId": "availability_api_generations_availability_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationAvailability"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Можно ли сейчас создать генерацию",
         "tags": [
           "generations"
         ]

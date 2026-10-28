@@ -17,10 +17,15 @@ class QueueUnavailableError(Exception):
     """Не удалось поставить задачу в очередь (например, Redis недоступен)."""
 
 
-def generation_job_id(generation_id: uuid.UUID) -> str:
+def generation_job_id(generation_id: uuid.UUID, tag: str | None = None) -> str:
     """id задачи в arq. Одинаковый для одной генерации, поэтому повторная
-    постановка той же генерации в очередь не создаст дубль."""
-    return f"generation:{generation_id}"
+    постановка той же генерации в очередь не создаст дубль.
+
+    tag — для намеренной повторной постановки (после паузы): arq хранит
+    результат прошлой задачи час и не даст поставить задачу с тем же id.
+    """
+    base = f"generation:{generation_id}"
+    return f"{base}:{tag}" if tag else base
 
 
 def redis_settings() -> RedisSettings:
@@ -29,7 +34,9 @@ def redis_settings() -> RedisSettings:
 
 class GenerationQueue(ABC):
     @abstractmethod
-    async def enqueue(self, generation_id: uuid.UUID) -> None:
+    async def enqueue(
+        self, generation_id: uuid.UUID, *, tag: str | None = None
+    ) -> None:
         """Ставит генерацию в очередь. При неудаче бросает QueueUnavailableError."""
 
 
@@ -45,12 +52,18 @@ class ArqGenerationQueue(GenerationQueue):
         )
         return cls(redis, settings.queue.name)
 
-    async def enqueue(self, generation_id: uuid.UUID) -> None:
+    @property
+    def redis(self) -> ArqRedis:
+        return self._redis
+
+    async def enqueue(
+        self, generation_id: uuid.UUID, *, tag: str | None = None
+    ) -> None:
         try:
             job = await self._redis.enqueue_job(
                 PROCESS_GENERATION_JOB,
                 str(generation_id),
-                _job_id=generation_job_id(generation_id),
+                _job_id=generation_job_id(generation_id, tag),
                 _queue_name=self._queue_name,
             )
         except Exception as exc:
@@ -77,5 +90,7 @@ class BackgroundGenerationQueue(GenerationQueue):
         self._background_tasks = background_tasks
         self._execute = execute
 
-    async def enqueue(self, generation_id: uuid.UUID) -> None:
+    async def enqueue(
+        self, generation_id: uuid.UUID, *, tag: str | None = None
+    ) -> None:
         self._background_tasks.add_task(self._execute, generation_id)

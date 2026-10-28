@@ -562,3 +562,10 @@
     height: 44px;
   }
 }
+
+/* Генерации на паузе. Итог лежит на приглушённом фоне — плашке нужен свой. */
+.unavailable {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}

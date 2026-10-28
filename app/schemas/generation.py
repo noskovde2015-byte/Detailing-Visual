@@ -76,3 +76,10 @@ class GenerationList(BaseModel):
 class InsufficientBalanceDetail(BaseModel):
     message: str
     balance: int
+
+
+class GenerationAvailability(BaseModel):
+    available: bool
+    message: str | None = Field(
+        default=None, description="Почему недоступна. Показывать пользователю"
+    )
