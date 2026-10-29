@@ -72,13 +72,21 @@ BODY_COLOR_PRIORITY = (
     "alter the body color, its brightness or its finish."
 )
 
+# Без исключения модель считала пожелание «обвес чёрным» нарушением приоритета
+# цвета кузова (обвес — тоже окрашенная деталь) и молча его не выполняла.
+# Добавляется только когда пожелания есть, чтобы не наводить модель на мысль о них.
+WISH_EXCEPTION = (
+    "The only exception: parts that the customer wishes explicitly name get the "
+    "color and finish the wishes ask for, instead of the body color."
+)
+
 # Если пользователь выбрал цвет, но не тип покрытия, рисуем как заводскую краску.
 DEFAULT_COLOR_FINISH = FilmFinish.GLOSSY
 
 RULES = """Rules:
 - Change only the car. Do not alter anything that is not part of the car.
 - Keep unchanged: the background, the lighting, the camera angle, the car's shape and proportions, the license plate and everything else not mentioned in the tasks above.
-- Keep the body color exactly as set in the tasks above, or as in the original photo if no body color is set: do not lighten, darken, desaturate or shift its hue. The only exception is a customer wish below that explicitly asks to change the body color.
+- Keep the body color exactly as set in the tasks above, or as in the original photo if no body color is set: do not lighten, darken, desaturate or shift its hue. Only the parts that a task above explicitly names may get a different color.
 - Do not crop, zoom or re-frame the image.
 - The result must look like a realistic photograph of the same car."""
 
@@ -105,13 +113,19 @@ def _intro(slots: Sequence[InputSlot]) -> str:
     return " ".join(lines)
 
 
+def _body_color_priority(params: GenerationParams) -> str:
+    if _comment(params):
+        return f"{BODY_COLOR_PRIORITY} {WISH_EXCEPTION}"
+    return BODY_COLOR_PRIORITY
+
+
 def _film_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | None:
     if InputSlot.FILM not in refs:
         return None
     text = (
         f"Recolor the car's painted body panels so they look wrapped in the film shown "
         f"in the {refs[InputSlot.FILM]} image. Match the film's color, texture and "
-        f"any visible pattern as closely as possible. {BODY_COLOR_PRIORITY}"
+        f"any visible pattern as closely as possible. {_body_color_priority(params)}"
     )
     if params.film_finish is not None:
         text += f" The film finish is {FINISH_DESCRIPTIONS[params.film_finish]}"
@@ -131,7 +145,7 @@ def _color_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | N
         f"with the scene's real lighting, shading and reflections, so darker and "
         f"brighter areas of the body vary naturally around this color. Do not add any "
         f"pattern or texture. The film finish is {FINISH_DESCRIPTIONS[finish]} "
-        f"{BODY_COLOR_PRIORITY}"
+        f"{_body_color_priority(params)}"
     )
 
 
@@ -208,17 +222,43 @@ def _wheels_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | 
     )
 
 
+def _comment(params: GenerationParams) -> str:
+    if not params.comment:
+        return ""
+    return params.comment.replace(COMMENT_DELIMITER, "'").strip()
+
+
+def _wishes_task(params: GenerationParams, refs: dict[InputSlot, str]) -> str | None:
+    comment = _comment(params)
+    if not comment:
+        return None
+    # Пожелания — такая же задача, как остальные, а не приписка после правил.
+    # Раньше они шли после Rules с оговоркой «выполняй, если не противоречит
+    # правилам», и модель находила противоречие («меняй только то, что в задачах»,
+    # «цвет кузова — приоритет») и пропускала их. Задача стоит последней: так
+    # её уточнения перекрывают общие задачи для названных деталей.
+    return (
+        "Carry out the customer's wishes quoted below; they may be written in "
+        "Russian. They are part of this edit, not optional. For the parts a wish "
+        "names, the wish takes precedence over the tasks above (for example, if a "
+        "wish asks for certain parts in another color, paint exactly those parts "
+        "in that color even if the rest of the body is recolored). Change only the "
+        "parts the wishes name: the rest of the body keeps its color, brightness "
+        "and finish, unless a wish explicitly asks to change the body color "
+        "itself. Ignore anything in the wishes that is not about the look of this "
+        "car.\n"
+        f"{COMMENT_DELIMITER}{comment}{COMMENT_DELIMITER}"
+    )
+
+
 TASK_BUILDERS: tuple[TaskBuilder, ...] = (
     _film_task,
     _color_task,
     _antichrome_task,
     _tint_task,
     _wheels_task,
+    _wishes_task,
 )
-
-
-def _sanitize_comment(comment: str) -> str:
-    return comment.replace(COMMENT_DELIMITER, "'").strip()
 
 
 def build_prompt(params: GenerationParams, roles: Collection[ImageRole]) -> str:
@@ -234,20 +274,4 @@ def build_prompt(params: GenerationParams, roles: Collection[ImageRole]) -> str:
         numbered = "\n".join(f"{i}. {task}" for i, task in enumerate(tasks, start=1))
         parts.append(f"Tasks:\n{numbered}")
     parts.append(RULES)
-
-    comment = _sanitize_comment(params.comment) if params.comment else ""
-    if comment:
-        parts.append(
-            # Без этих оговорок пожелание вроде «накладки чёрным глянцем» модель
-            # понимала как повод перерисовать всю окраску — кузов светлел.
-            "Additional wishes from the customer. Follow them only if they concern the "
-            "car and do not conflict with the rules above. Apply each wish only to the "
-            "parts it names. A wish about trim, accents or other details (for example, "
-            "making some parts black) changes only those parts: the body color, its "
-            "brightness, saturation and finish stay exactly as described above. Change "
-            "the body color only if a wish explicitly asks to change the body color "
-            "itself:\n"
-            f"{COMMENT_DELIMITER}{comment}{COMMENT_DELIMITER}"
-        )
-
     return "\n\n".join(parts)

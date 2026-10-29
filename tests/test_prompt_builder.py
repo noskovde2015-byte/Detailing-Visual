@@ -46,7 +46,8 @@ def test_comment_cannot_break_delimiter() -> None:
 def test_blank_comment_not_in_prompt() -> None:
     params = GenerationParams(antichrome=True, comment="   ")
     prompt = build_prompt(params, {ImageRole.CAR})
-    assert "Additional wishes" not in prompt
+    assert "customer's wishes" not in prompt
+    assert "customer wishes" not in prompt
 
 
 def test_images_sent_in_fixed_order() -> None:
@@ -118,13 +119,37 @@ def test_glossy_is_not_mirror_or_candy() -> None:
     assert "not candy-like" in prompt
 
 
-def test_comment_cannot_silently_change_body_color() -> None:
+def test_wish_is_a_task_before_rules() -> None:
+    # Пожелание после правил с оговоркой «если не противоречит» модель пропускала.
+    params = GenerationParams(film_color="#1F3A93", comment="обвес чёрным глянцем")
+    prompt = build_prompt(params, [ImageRole.CAR])
+    assert prompt.index("обвес чёрным глянцем") < prompt.index("Rules:")
+    assert "Tasks:\n" in prompt
+    assert "2. Carry out the customer's wishes" in prompt
+    assert "do not conflict" not in prompt
+
+
+def test_wish_overrides_body_color_for_named_parts() -> None:
     params = GenerationParams(
         film_color="#1F3A93", comment="накладки на капот и бампер чёрным глянцем"
     )
     prompt = build_prompt(params, [ImageRole.CAR])
-    assert "Apply each wish only to the parts it names" in prompt
-    assert "Change the body color only if a wish explicitly asks" in prompt
+    assert "the wish takes precedence over the tasks above" in prompt
+    assert "parts that the customer wishes explicitly name" in prompt
+    # Остальной кузов при этом не трогаем.
+    assert "the rest of the body keeps its color" in prompt
+
+
+def test_wish_exception_only_when_there_are_wishes() -> None:
+    prompt = build_prompt(GenerationParams(film_color="#1F3A93"), [ImageRole.CAR])
+    assert "The body color is the priority of this edit" in prompt
+    assert "customer wishes" not in prompt
+
+
+def test_wish_alone_is_a_task() -> None:
+    prompt = build_prompt(GenerationParams(comment="суппорты красные"), [ImageRole.CAR])
+    assert "1. Carry out the customer's wishes" in prompt
+    assert prompt.count('"""') == 2
 
 
 def test_body_color_rule_applies_without_options() -> None:
@@ -136,4 +161,4 @@ def test_body_color_rule_applies_without_options() -> None:
 def test_explicit_wish_can_still_change_body_color() -> None:
     # Правило про цвет не должно запрещать прямую просьбу перекрасить кузов.
     prompt = build_prompt(GenerationParams(comment="кузов в синий"), [ImageRole.CAR])
-    assert "The only exception is a customer wish below" in prompt
+    assert "unless a wish explicitly asks to change the body color" in prompt
