@@ -28,11 +28,13 @@ RUN set -eu; \
     install -m 0755 /tmp/xray/xray /usr/local/bin/xray; \
     mv /tmp/xray/geoip.dat /tmp/xray/geosite.dat /usr/local/share/xray/; \
     rm -rf /tmp/xray /tmp/xray.zip; \
-    adduser -D -H -s /sbin/nologin xray
+    adduser -D -H -u 10001 -s /sbin/nologin xray
 
 ENV XRAY_LOCATION_ASSET=/usr/local/share/xray
 
-USER xray
+# Фиксированный uid: deploy/xray/client.json на хосте отдаётся именно ему
+# (chown 10001:10001), чтобы файл с ключами мог читать только Xray и root.
+USER 10001:10001
 
 # Конфиг монтируется из deploy/xray/client.json (в git не хранится: там ключи).
 ENTRYPOINT ["/usr/local/bin/xray", "run", "-c", "/etc/xray/config.json"]

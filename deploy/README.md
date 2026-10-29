@@ -89,9 +89,14 @@ cd /opt/detailing
 
 ```bash
 cp deploy/xray/client.example.json deploy/xray/client.json
-chmod 600 deploy/xray/client.json
 nano deploy/xray/client.json
+# Ключи читают только root и Xray: в контейнере он работает не от root, а от uid 10001.
+chown 10001:10001 deploy/xray/client.json
+chmod 600 deploy/xray/client.json
 ```
+
+Если узел пока один — удалить из `client.json` блок `node-2` целиком (вместе с
+запятой перед ним). Балансировщик просто будет использовать единственный узел.
 
 Заменить `NODE1_*` и `NODE2_*` данными из шага 2:
 
@@ -139,6 +144,12 @@ docker compose ps
 ```
 
 Все сервисы `running`/`healthy`, `migrate` — `exited (0)`. Первая сборка ~5–10 минут.
+
+Redis просит разрешить overcommit памяти (иначе фоновое сохранение может падать):
+
+```bash
+echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-redis.conf && sysctl --system >/dev/null
+```
 
 Проверка пути к Gemini — должна быть страна узла, **не RU**:
 
@@ -248,6 +259,7 @@ docker compose up -d --build
 |---|---|
 | Генерации падают | `docker compose logs -f worker` |
 | Генерации на паузе | Админка → причина и подсказка; `docker compose logs worker \| grep ПРИОСТАНОВЛЕНЫ` |
+| `xray-client` unhealthy, `permission denied` | `chown 10001:10001 deploy/xray/client.json` |
 | Нет связи с узлами | `docker compose logs xray-client`, на узле `systemctl status xray`, `journalctl -u xray -n 50` |
 | Сайт не открывается | `docker compose ps`, `docker compose logs web api`, `nginx -t`, `journalctl -u nginx` |
 | Ошибка входа через Google | redirect URI в Google Console и `APP_CONFIG__GOOGLE__REDIRECT_URI` совпадают символ в символ |
